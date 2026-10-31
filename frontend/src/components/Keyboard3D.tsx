@@ -18,9 +18,12 @@ import * as THREE from 'three';
 import { GLTFLoader } from 'three/examples/jsm/loaders/GLTFLoader.js';
 import { RoomEnvironment } from 'three/examples/jsm/environments/RoomEnvironment.js';
 import { on as busOn } from '../core/bus.ts';
+import { dayIndexAt, PressCursor } from '../core/press-stream.ts';
 import { prefersReducedMotion } from '../core/theme.ts';
-import { formatMetric } from '../domain/metrics.ts';
+import { formatCount } from '../domain/format.ts';
+import { formatMetric, heatLevel } from '../domain/metrics.ts';
 import {
+  COLD_FACE,
   MODEL_URL,
   NEUTRAL_ATLAS_URL,
   heatRamp,
@@ -28,6 +31,7 @@ import {
   modelLevels,
   parseNodeName,
 } from '../domain/keyboard-cat.ts';
+import type { PressStreamData } from '../core/press-stream.ts';
 import type { HeatmapKey, HeatmapResponse } from '../types/api.d.ts';
 
 /** 渲染模式：日常染色 / 展示发光。 */
@@ -37,6 +41,28 @@ export type Keyboard3DMode = 'heat' | 'showcase';
 const PRESS_MS = 170;
 /** 下沉深度（模型单位 = 米）。键帽本身高 4mm，沉 1.6mm 是明显的 40%。 */
 const PRESS_DEPTH = 0.0016;
+
+/** 时间流逝：数据时间的推进速率（每 1 秒真实时间推进多少毫秒数据）。 */
+export interface KeyboardStreamSource {
+  data: PressStreamData;
+  /** 数据毫秒 / 真实秒。一天 = 86_400_000；4 秒/天就是 21_600_000。 */
+  rate: number;
+  playing: boolean;
+  /** 拖进度：变化时跳到这里（数据毫秒偏移）。 */
+  seek: number | null;
+}
+
+/** 时间流逝每 ~66ms 报一次，宿主只拿它渲染大字与日期，不参与 3D。 */
+export interface StreamTick {
+  offsetMs: number;
+  total: number;
+  dayIndex: number;
+  date: string;
+  playing: boolean;
+}
+
+/** 时间流逝的刷新节拍：键面数字与颜色不需要 60fps，15Hz 肉眼就是连续的。 */
+const STREAM_REFRESH_MS = 66;
 
 
 /** 固定视角：略高的 3/4 俯视，右侧稍近。界面不提供改它的入口。 */
@@ -73,6 +99,9 @@ interface KeyEntry {
   center: THREE.Vector3;
   /** 键帽半宽（世界单位），用来推字号。 */
   halfWidth: number;
+  /** 键帽在屏幕上的宽度（px）与读数下移量，`placeLabels` 每帧复用（不重量字体）。 */
+  widthPx: number;
+  offsetPx: number;
   label: HTMLDivElement;
   valueNode: HTMLSpanElement;
   level: number;
@@ -81,6 +110,8 @@ interface KeyEntry {
 interface SceneHandle {
   setData: (heatmap: HeatmapResponse | null | undefined, metric: string) => void;
   setMode: (mode: Keyboard3DMode) => void;
+  /** 时间流逝：喂一段逐次按键流；null 关闭。 */
+  setStream: (stream: KeyboardStreamSource | null) => void;
   /** 主题换了之后重读一次热力色。 */
   refreshColors: () => void;
   dispose: () => void;
@@ -93,6 +124,10 @@ interface SceneCallbacks {
   onKeysLoaded: (keyIds: string[]) => void;
   /** 开屏运镜 + 水波全部演完。宿主据此才收掉浮层（不再靠猜时间）。 */
   onIntroEnd: () => void;
+  /** 时间流逝的读数（约 15Hz）。 */
+  onStreamTick: (tick: StreamTick) => void;
+  /** 时间流逝放到结尾。 */
+  onStreamEnd: () => void;
 }
 
 export interface Keyboard3DProps {
@@ -101,11 +136,15 @@ export interface Keyboard3DProps {
   mode?: Keyboard3DMode;
   /** 开屏用：从远处拉近 + 放一轮水波。日常进页不要开。 */
   intro?: boolean;
+  /** 时间流逝：逐次按键流 + 播放状态。给了它就进入"计数在上色"的展示模式。 */
+  stream?: KeyboardStreamSource | null;
   /** 开屏动画（运镜 + 水波）演完时回调一次。宿主据此收浮层。 */
   onIntroEnd?: (() => void) | null;
   onSelectKey?: ((keyId: string) => void) | null;
   /** 模型加载完回报它实际带的键位，供视图核对当前布局里有没有键位不在模型上。 */
   onKeysLoaded?: ((keyIds: string[]) => void) | null;
+  onStreamTick?: ((tick: StreamTick) => void) | null;
+  onStreamEnd?: (() => void) | null;
 }
 
 /** 落影贴图：中心深、边缘透明的径向渐变，缩放成椭圆后就是一块柔和的贴地影。 */
@@ -130,6 +169,17 @@ function softShadowTexture(): THREE.Texture {
 function cssHeatRamp(): string[] {
   const style = getComputedStyle(document.documentElement);
   return heatRamp((name) => style.getPropertyValue(name));
+}
+
+/** 时间流逝的色阶（白 → 蓝 → 沙 → 橙 → 红）。理由见 tokens.css 的 `--show-heat-*`。 */
+const SHOW_HEAT_FALLBACK = ['#a9c6e6', '#7fa9d6', '#e6c48e', '#e08b4f', '#cf4a3d'];
+
+function cssShowRamp(): string[] {
+  const style = getComputedStyle(document.documentElement);
+  const steps = SHOW_HEAT_FALLBACK.map(
+    (fallback, index) => style.getPropertyValue(`--show-heat-${index + 1}`).trim() || fallback,
+  );
+  return [COLD_FACE, ...steps];
 }
 
 function createKeyboardScene(
@@ -197,6 +247,8 @@ function createKeyboardScene(
   const reduced = prefersReducedMotion();
 
   let ramp = cssHeatRamp();
+  /** 时间流逝专用色阶（冷 → 暖）。见 tokens.css 的 `--show-heat-*`。 */
+  let showRamp = cssShowRamp();
   let levels = new Map<string, number>();
   let values = new Map<string, HeatmapKey>();
   let metric = 'press_count';
@@ -217,6 +269,22 @@ function createKeyboardScene(
   const modelSize = new THREE.Vector3();
   const modelCenter = new THREE.Vector3();
   let fitDistance = 0;
+
+  // ── 时间流逝 ───────────────────────────────────────────────────────────
+  /** 当前喂进来的逐次按键流；null = 不在展示模式。 */
+  let stream: KeyboardStreamSource | null = null;
+  let streamCursor: PressCursor | null = null;
+  /** 色阶上限：终值的 p95（装在 decodePressStream 里算好）。 */
+  let streamP95 = 1;
+  /** 上一次已应用的 seek 值（同一个值不重复跳）。 */
+  let streamSeekApplied: number | null = null;
+  let streamLastFrame = 0;
+  let streamLastRefresh = 0;
+  let streamEnded = false;
+  /** 时间流逝时相机绕 Y 的绝对角度（累加，切暂停不重置）。 */
+  let streamAngle = 0;
+  /** key_id → 按键流里的下标。 */
+  let streamIndex = new Map<string, number>();
 
   /**
    * 取景：把包围盒的 8 个角投影到 NDC，按实际占屏比例迭代收缩距离。
@@ -275,9 +343,10 @@ function createKeyboardScene(
    * showcase：换回原图集（本色），改由 emissive 发光表达热度。
    */
   function applyLook(): void {
+    const palette = stream ? showRamp : ramp;
     for (const entry of keys.values()) {
       const level = entry.level;
-      const color = ramp[level] ?? ramp[0];
+      const color = palette[level] ?? palette[0];
       if (mode === 'heat') {
         entry.material.map = neutralMap;
         entry.material.color.set(color);
@@ -298,6 +367,8 @@ function createKeyboardScene(
   }
 
   function updateLabels(): void {
+    // 时间流逝自己写数字（全键、千分位），不走"热力读数"那一套。
+    if (stream) return;
     for (const [keyId, entry] of keys) {
       // 每颗键都印读数。主次不是靠"少印几个"拉开的，而是靠**键面字符的大小**：
       // 中性图集里的字符已经缩到只占上缘一小条，下方整片留给数字（见 make_neutral_atlas.py）。
@@ -308,29 +379,47 @@ function createKeyboardScene(
     }
   }
 
-  /** 把每个键帽中心投影到画布坐标，摆好数字；顺带按投影宽度收字号，免得长数字溢出键面。 */
-  function layoutLabels(): void {
+  /**
+   * 只摆位置：把键帽中心投影到画布坐标，写 transform。
+   *
+   * 与 `layoutLabels` 分开是因为**相机在时间流逝里一直在动**：每帧重算字号要走
+   * `offsetWidth`（强制回流），104 个键一次就要几毫秒；位置只需要一次投影矩阵乘法。
+   * 字号沿用上一次布局算好的 `widthPx/offsetPx`。
+   */
+  function placeLabels(): void {
     if (!ready) return;
     const width = container.clientWidth || 1;
     const height = container.clientHeight || 1;
-    const edge = new THREE.Vector3();
     for (const entry of keys.values()) {
       const projected = entry.center.clone().project(camera);
       const x = (projected.x * 0.5 + 0.5) * width;
       let y = (-projected.y * 0.5 + 0.5) * height;
-      edge.copy(entry.center).add(new THREE.Vector3(entry.halfWidth, 0, 0)).project(camera);
-      const keyWidthPx = Math.abs(edge.x - projected.x) * 0.5 * width;
       // 读数落在键面下半部（字符在上缘）：往下挪约 1/4 键高。
       // 空格/Shift/Enter 这类长键例外——它们没有居中字符，读数居中更好看也更稳。
-      const offset = keyWidthPx > 90 ? 0 : Math.min(8, keyWidthPx * 0.12);
-      let labelY = y + offset;
-      if (offset > 0 && labelY > height - 24) labelY = y - offset * 0.8;
+      let labelY = y + entry.offsetPx;
+      if (entry.offsetPx > 0 && labelY > height - 24) labelY = y - entry.offsetPx * 0.8;
       y = Math.min(height - 18, Math.max(18, labelY));
       entry.label.style.transform = `translate(-50%, -50%) translate(${x}px, ${y}px)`;
-      if (entry.label.style.display === 'none') continue;
+    }
+  }
+
+  /** 布局：算键宽、字号、读数偏移，然后摆一次位置。只在尺寸变化时跑。 */
+  function layoutLabels(): void {
+    if (!ready) return;
+    const width = container.clientWidth || 1;
+    const edge = new THREE.Vector3();
+    for (const entry of keys.values()) {
+      const projected = entry.center.clone().project(camera);
+      edge.copy(entry.center).add(new THREE.Vector3(entry.halfWidth, 0, 0)).project(camera);
+      const keyWidthPx = Math.abs(edge.x - projected.x) * 0.5 * width;
+      entry.widthPx = keyWidthPx;
+      entry.offsetPx = keyWidthPx > 90 ? 0 : Math.min(8, keyWidthPx * 0.12);
       // 字号跟着键宽走；宽度收到键面以内，免得压到隔壁键。
+      // **隐藏的标签也要先给一个字号**：时间流逝里它们在模型加载完时全是隐藏的，
+      // 等第一次出现数字再算，第一帧会是继承来的 16px、直接压到隔壁键上。
       let size = Math.min(16, Math.max(9, keyWidthPx * 0.36));
       entry.label.style.fontSize = `${size}px`;
+      if (entry.label.style.display === 'none') continue;
       const limit = keyWidthPx * 1.05;
       let guard = 0;
       while (entry.label.offsetWidth > limit && size > 8 && guard < 16) {
@@ -339,6 +428,7 @@ function createKeyboardScene(
         guard += 1;
       }
     }
+    placeLabels();
   }
 
   function refresh(): void {
@@ -359,6 +449,82 @@ function createKeyboardScene(
     if (next === mode) return;
     mode = next;
     if (ready) refresh();
+  }
+
+  /**
+   * 时间流逝上色：每颗键的累计次数 → 档位 → 颜色，并把数字写在键面上。
+   *
+   * 档位用**终值 p95**（流的最后一帧）当分母：动画结尾于是正好落在日常热力图的那套
+   * 档位上，不会"放完一片红"。没按过的键不印数字、不上色——和视频里一样，白键就是白键。
+   */
+  function applyStreamFrame(): void {
+    if (!stream || !streamCursor) return;
+    const counts = streamCursor.counts;
+    for (const [keyId, entry] of keys) {
+      const at = streamIndex.get(keyId);
+      const count = at === undefined ? 0 : counts[at];
+      const text = count > 0 ? formatCount(count) : '';
+      if (entry.valueNode.textContent !== text) {
+        entry.valueNode.textContent = text;
+        entry.label.style.display = text ? '' : 'none';
+        // 数字长度会变（3 位 → 6 位），字号按"键宽 ÷ 字符数"现算，不走 offsetWidth：
+        // 每帧测 104 个元素的宽度会强制回流，15Hz 下直接吃掉几毫秒。
+        const width = entry.widthPx || 22;
+        const length = Math.max(3, text.length);
+        const byLength = (width * 1.04) / (length * 0.58);
+        entry.label.style.fontSize = `${Math.max(6.5, Math.min(13, Math.min(width * 0.34, byLength)))}px`;
+      }
+      const level = count > 0 ? Math.max(1, heatLevel(count / streamP95)) : 0;
+      if (level === entry.level) continue;
+      entry.level = level;
+      const color = showRamp[level] ?? showRamp[0];
+      entry.material.map = neutralMap;
+      entry.material.color.set(color);
+      entry.material.emissive.set('#000000');
+      entry.material.emissiveIntensity = 0;
+      entry.material.needsUpdate = true;
+      entry.label.style.color = inkFor(color);
+    }
+  }
+
+  function setStream(next: KeyboardStreamSource | null): void {
+    if (!next) {
+      stream = null;
+      streamCursor = null;
+      streamIndex = new Map();
+      streamSeekApplied = null;
+      streamEnded = false;
+      if (ready) refresh();
+      return;
+    }
+    if (!stream || stream.data !== next.data || !streamCursor) {
+      stream = next;
+      streamCursor = new PressCursor(next.data);
+      streamIndex = new Map(next.data.keys.map((keyId, index) => [keyId, index]));
+      streamP95 = Math.max(1, next.data.p95);
+      streamSeekApplied = null;
+      streamEnded = false;
+      streamAngle = 0;
+      // 从第一颗键按下开始：库里最早的月表可能比数据早好几天，别让动画先空转。
+      streamCursor.seek(next.data.times.length ? next.data.times[0] : 0);
+      streamLastFrame = performance.now();
+      streamLastRefresh = 0;
+      if (ready) {
+        applyStreamFrame();
+        placeLabels();
+      }
+      return;
+    }
+    const playingChanged = stream.playing !== next.playing;
+    stream = next;
+    // 暂停→继续时重置帧基准，否则暂停的那几秒会被算成一次大跳，一下刷出上万次按下。
+    if (playingChanged) streamLastFrame = performance.now();
+    if (next.seek !== null && next.seek !== streamSeekApplied) {
+      streamSeekApplied = next.seek;
+      streamCursor.seek(next.seek);
+      streamEnded = false;
+      if (ready) applyStreamFrame();
+    }
   }
 
   /**
@@ -494,6 +660,8 @@ function createKeyboardScene(
           rippleAt: null,
           center: new THREE.Vector3(),
           halfWidth: 0,
+          widthPx: 0,
+          offsetPx: 0,
           label,
           valueNode,
           level: 0,
@@ -544,6 +712,12 @@ function createKeyboardScene(
       fitCamera();
       ready = true;
       refresh();
+      // 时间流逝可能比模型先到：模型就位时补一帧，否则要等到下一次 66ms 节拍才有颜色。
+      if (stream) {
+        streamLastFrame = performance.now();
+        applyStreamFrame();
+        placeLabels();
+      }
       if (!introDone) {
         introAt = performance.now();
         nextRippleAt = introAt + INTRO_MS + 160;
@@ -641,6 +815,47 @@ function createKeyboardScene(
       callbacks.onIntroEnd();
     }
 
+    // 时间流逝：推进数据时钟，按 15Hz 刷新键面，镜头缓慢环绕。
+    if (stream && streamCursor && ready && fitDistance > 0) {
+      const data = stream.data;
+      if (stream.playing && !streamEnded) {
+        // 与回放同一条规矩：单帧最多推进 100ms，切后台回来不会一口气倒出上万次按下。
+        const delta = Math.min(100, Math.max(0, now - streamLastFrame));
+        streamLastFrame = now;
+        // 速率是"数据毫秒 / 真实秒"，这里 delta 是真实毫秒，所以除 1000。
+        let offset = streamCursor.offset + (delta / 1000) * stream.rate;
+        if (offset >= data.spanMs) {
+          offset = data.spanMs;
+          streamEnded = true;
+          callbacks.onStreamEnd();
+        }
+        streamCursor.advanceTo(offset);
+        // 环绕角度只在播放时累加：暂停时镜头也应该停住，否则"暂停"只停数字不停画面。
+        streamAngle += delta * 0.00012;
+      } else {
+        // 暂停/结束时持续把基准拉到 now，继续播放的第一帧才不会跳。
+        streamLastFrame = now;
+      }
+      swayDirection.copy(CAMERA_DIRECTION).applyAxisAngle(UP, Math.sin(streamAngle) * 0.11);
+      camera.position.copy(modelCenter).addScaledVector(swayDirection, fitDistance);
+      camera.lookAt(modelCenter);
+      camera.updateMatrixWorld();
+      // 相机在动，数字叠层必须跟着重投影；这里只做投影，不量字号。
+      placeLabels();
+      if (now - streamLastRefresh >= STREAM_REFRESH_MS) {
+        streamLastRefresh = now;
+        applyStreamFrame();
+        const dayIndex = dayIndexAt(data, streamCursor.offset);
+        callbacks.onStreamTick({
+          offsetMs: streamCursor.offset,
+          total: streamCursor.total,
+          dayIndex,
+          date: data.days[dayIndex]?.date || data.from,
+          playing: stream.playing && !streamEnded,
+        });
+      }
+    }
+
     renderer.render(scene, camera);
   };
   raf = window.requestAnimationFrame(loop);
@@ -648,8 +863,10 @@ function createKeyboardScene(
   return {
     setData,
     setMode,
+    setStream,
     refreshColors() {
       ramp = cssHeatRamp();
+      showRamp = cssShowRamp();
       if (ready) refresh();
     },
     dispose() {
@@ -684,9 +901,12 @@ export function Keyboard3D({
   metric,
   mode = 'heat',
   intro = false,
+  stream = null,
   onIntroEnd = null,
   onSelectKey = null,
   onKeysLoaded = null,
+  onStreamTick = null,
+  onStreamEnd = null,
 }: Keyboard3DProps) {
   const host = useRef<HTMLDivElement | null>(null);
   const sceneRef = useRef<SceneHandle | null>(null);
@@ -696,6 +916,10 @@ export function Keyboard3D({
   keysLoadedRef.current = onKeysLoaded;
   const introEndRef = useRef(onIntroEnd);
   introEndRef.current = onIntroEnd;
+  const streamTickRef = useRef(onStreamTick);
+  streamTickRef.current = onStreamTick;
+  const streamEndRef = useRef(onStreamEnd);
+  streamEndRef.current = onStreamEnd;
   const [error, setError] = useState<string | null>(null);
   const [ready, setReady] = useState(false);
 
@@ -714,6 +938,8 @@ export function Keyboard3D({
           onError: () => setError('3D 模型加载失败'),
           onKeysLoaded: (keyIds) => keysLoadedRef.current?.(keyIds),
           onIntroEnd: () => introEndRef.current?.(),
+          onStreamTick: (tick) => streamTickRef.current?.(tick),
+          onStreamEnd: () => streamEndRef.current?.(),
         },
         mode,
         intro,
@@ -739,12 +965,22 @@ export function Keyboard3D({
     if (ready) sceneRef.current?.setMode(mode);
   }, [ready, mode]);
 
+  // 时间流逝：`stream` 由宿主 useMemo 保持稳定；这里每次变化都重新喂一遍，
+  // 播放/暂停、倍速、seek 都是同一个入口。
+  useEffect(() => {
+    sceneRef.current?.setStream(stream);
+  }, [ready, stream]);
+
   return (
     <div
       className={`keyboard-3d keyboard-3d--${mode}`}
       ref={host}
       role="img"
-      aria-label="3D 猫耳键盘热力图；固定视角，点击键位查看详情，完整读数见下方表格视图"
+      aria-label={
+        stream
+          ? '3D 猫耳键盘的时间流逝：按真实按键顺序累加，键面显示累计次数'
+          : '3D 猫耳键盘热力图；固定视角，点击键位查看详情，完整读数见下方表格视图'
+      }
     >
       {error ? <div className="keyboard-3d__fallback">{error}</div> : null}
     </div>

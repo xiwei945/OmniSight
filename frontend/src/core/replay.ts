@@ -34,8 +34,16 @@ export interface ReplayEvent {
 const TARGET_MS = 30_000;
 /** 上限：极长或极稀疏的一天也别放成十分钟。超出的间隔按这个封顶。 */
 const MAX_GAP_MS = 900;
-/** 下限：爆发段里相邻两次按键至少隔这么久，否则渲染不出来。 */
-const MIN_GAP_MS = 6;
+/**
+ * 下限：相邻两颗键在屏幕上的最短间隔。
+ *
+ * **这个数就是"顺序看得见"本身**：原来是 6ms，远小于一帧（16.7ms），于是一帧内到期的
+ * 按键全被同一次 rAF 发出去——画面上是"整块键盘同时闪"，而不是 d→w→a→s。40ms 约 2.4 帧，
+ * 一颗接一颗才读得出来；再快就只剩一糊。
+ */
+const MIN_GAP_MS = 40;
+/** 单帧最多推进多少毫秒。切后台回来时用它把"错过的几个小时"夹掉。 */
+const MAX_FRAME_MS = 100;
 
 let state: ReplayState = { status: 'idle', total: 0, done: 0 };
 const listeners = new Set<(value: ReplayState) => void>();
@@ -46,8 +54,13 @@ let schedule: number[] = [];
 let cursor = 0;
 let speed = 1;
 let raf = 0;
-let wallBase = 0;
-let virtualBase = 0;
+/**
+ * 虚拟时钟。**累加**而不是"起点 + 墙钟差"：后者的写法在标签页切后台时，rAF 停摆
+ * 几分钟回来，`now - wallBase` 一次跳掉几分钟，一帧里把几千颗键全发出去——画面成了
+ * 一次闪光，顺序也就没了。累加式每帧最多认 100ms。
+ */
+let elapsed = 0;
+let lastFrameAt = 0;
 /** 上一次把进度写进 state 的时刻。进度条不需要 60fps，节流到 5Hz。 */
 let lastReport = 0;
 
@@ -97,7 +110,9 @@ function buildSchedule(list: ReplayEvent[]): void {
 
 function frame(): void {
   if (state.status !== 'playing') return;
-  const elapsed = virtualBase + performance.now() - wallBase;
+  const now = performance.now();
+  elapsed += Math.min(MAX_FRAME_MS, Math.max(0, now - lastFrameAt));
+  lastFrameAt = now;
   while (cursor < events.length && schedule[cursor] <= elapsed) {
     emit('key:press', [events[cursor].key_id]);
     cursor += 1;
@@ -106,7 +121,6 @@ function frame(): void {
     setState({ status: 'idle', total: events.length, done: events.length });
     return;
   }
-  const now = performance.now();
   if (now - lastReport > 200) {
     lastReport = now;
     setState({ ...state, done: cursor });
@@ -139,9 +153,9 @@ export async function start(): Promise<void> {
     events = payload.events;
     buildSchedule(events);
     cursor = 0;
-    virtualBase = 0;
+    elapsed = 0;
+    lastFrameAt = performance.now();
     lastReport = 0;
-    wallBase = performance.now();
     setState({ status: 'playing', total: events.length, done: 0 });
     raf = window.requestAnimationFrame(frame);
   } catch {
@@ -151,14 +165,14 @@ export async function start(): Promise<void> {
 
 export function pause(): void {
   if (state.status !== 'playing') return;
-  virtualBase += performance.now() - wallBase;
   cancelFrame();
   setState({ ...state, status: 'paused' });
 }
 
 export function resume(): void {
   if (state.status !== 'paused') return;
-  wallBase = performance.now();
+  // 基准拉到"现在"：暂停期间的时间不计入虚拟时钟，继续时不会一下子补播一大段。
+  lastFrameAt = performance.now();
   setState({ ...state, status: 'playing' });
   raf = window.requestAnimationFrame(frame);
 }
@@ -175,6 +189,6 @@ export function stop(): void {
   events = [];
   schedule = [];
   cursor = 0;
-  virtualBase = 0;
+  elapsed = 0;
   setState({ status: 'idle', total: 0, done: 0 });
 }

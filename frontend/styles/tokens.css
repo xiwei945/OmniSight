@@ -92,6 +92,16 @@
   --kb-heat-4: #6c3714;
   --kb-heat-5: #4a240c;
 
+  /* 时间流逝展示层的色阶（KeyboardShowcase / Keyboard3D 的 stream 模式）。
+   * 参考视频是"白 → 蓝 → 沙 → 橙 → 红"：**前三档偏冷**，才看得出"刚用上"与"用得多"
+   * 的差别。换成日常那套暖色阶，第一颗键按下去就全是焦糖，填充过程反而读不出来。
+   * 同样深浅主题共用：键帽是浅色实物，色阶跟着主题反相会让零态与最热档分不开。 */
+  --show-heat-1: #a9c6e6;
+  --show-heat-2: #7fa9d6;
+  --show-heat-3: #e6c48e;
+  --show-heat-4: #e08b4f;
+  --show-heat-5: #cf4a3d;
+
   --status-ok:    #1a9d54;
   --status-warn:  #d98613;
   --status-error: #d6453d;

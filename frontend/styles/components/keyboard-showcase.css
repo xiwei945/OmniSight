@@ -1,0 +1,188 @@
+/* 键盘「时间流逝」全屏展示层（KeyboardShowcase）。
+ *
+ * 参考视频的舞台是"摄影棚灰白 + 柔和投影"，所以这里不套卡片的边框，而是整屏一层
+ * 从顶部的暖白往外压暗的径向光，让键帽浮在这层光上。深色主题沿用同一结构，只是把
+ * 暖白换成暖褐——不做一套"白底舞台"，否则深色主题下打开会像闪光弹。
+ *
+ * 大字三行（日期 / 第 N 天 / 总数）是这块界面的主视觉：字号用 clamp 跟着视口走，
+ * 数字一律 tabular-nums，滚动时不会左右抖。
+ */
+.showcase {
+  position: fixed;
+  inset: 0;
+  z-index: 80;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+  color: var(--text-primary);
+  background:
+    radial-gradient(125% 90% at 50% 4%, #fffefb 0%, #f8f1e6 40%, #e9dfcf 78%, #ded2bf 100%);
+}
+
+:root[data-theme="dark"] .showcase {
+  background:
+    radial-gradient(125% 90% at 50% 4%, #3b2e24 0%, #2a211a 42%, #191310 80%, #120e0b 100%);
+}
+
+/* 跟随系统（`ui.theme = auto`）时没有 `data-theme` 属性，只有媒体查询。
+ * 少这一条的表现是"深色背景没生效、文字却已经翻成浅色"——大字白底白字，几乎看不见。 */
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) .showcase {
+    background:
+      radial-gradient(125% 90% at 50% 4%, #3b2e24 0%, #2a211a 42%, #191310 80%, #120e0b 100%);
+  }
+}
+
+/* 四周压一层极淡的暗角，画面边缘不"飘"。 */
+.showcase::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  background: radial-gradient(115% 95% at 50% 45%, transparent 55%, rgba(60, 42, 26, .1) 100%);
+}
+
+.showcase__stage {
+  position: relative;
+  flex: 1 1 auto;
+  min-height: 0;
+}
+
+/* 展示层里的画布铺满整块舞台：去掉卡片的圆角/边框/下沉底，只剩键帽。 */
+.showcase__stage .keyboard-3d {
+  height: 100%;
+  border: 0;
+  border-radius: 0;
+  background: transparent;
+}
+
+.showcase__veil {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: var(--space-4);
+  font-size: var(--text-sm);
+  color: var(--text-secondary);
+}
+
+/* ── 三行大字 ────────────────────────────────────────────────────────── */
+.showcase__hud {
+  position: absolute;
+  top: clamp(20px, 5vh, 56px);
+  left: clamp(20px, 5vw, 84px);
+  pointer-events: none;
+}
+
+.showcase__date {
+  font-size: clamp(14px, 1.25vw, 19px);
+  letter-spacing: .2em;
+  color: var(--text-secondary);
+  font-variant-numeric: tabular-nums;
+}
+
+.showcase__day {
+  margin-top: 6px;
+  font-size: clamp(11px, .95vw, 14px);
+  letter-spacing: .38em;
+  color: var(--text-tertiary);
+}
+
+.showcase__total {
+  margin-top: clamp(6px, 1vh, 14px);
+  font-size: clamp(40px, 6.2vw, 86px);
+  font-weight: 200;
+  line-height: 1;
+  letter-spacing: -.025em;
+  color: var(--text-primary);
+  font-variant-numeric: tabular-nums;
+}
+
+.showcase__caption {
+  position: absolute;
+  top: clamp(22px, 5.4vh, 60px);
+  right: clamp(20px, 5vw, 84px);
+  font-size: clamp(11px, .95vw, 13px);
+  letter-spacing: .12em;
+  color: var(--text-tertiary);
+  pointer-events: none;
+}
+
+/* ── 底部控制条 ──────────────────────────────────────────────────────── */
+.showcase__bar {
+  position: absolute;
+  left: 50%;
+  bottom: clamp(14px, 3vh, 30px);
+  transform: translateX(-50%);
+  display: flex;
+  align-items: center;
+  gap: var(--space-3);
+  max-width: calc(100vw - 32px);
+  padding: 9px 14px;
+  border-radius: var(--radius-full);
+  border: 1px solid var(--border-subtle);
+  background: color-mix(in srgb, var(--surface-card) 78%, transparent);
+  backdrop-filter: blur(10px);
+  box-shadow: 0 12px 32px rgba(60, 40, 20, .14);
+}
+
+.showcase__button {
+  flex: none;
+  border: 1px solid var(--border-default);
+  border-radius: var(--radius-full);
+  background: var(--surface-card);
+  color: var(--text-primary);
+  font-size: var(--text-xs);
+  padding: 6px 14px;
+  cursor: pointer;
+}
+.showcase__button:hover { background: var(--surface-hover); }
+
+/* 分段控件在条里被挤成了三行（`.segmented` 默认 flex-wrap: wrap）。
+ * 它是固定档位，不该参与收缩。 */
+.showcase__bar .segmented {
+  flex: none;
+  flex-wrap: nowrap;
+}
+
+.showcase__track {
+  position: relative;
+  flex: 1 1 auto;
+  min-width: 140px;
+  width: clamp(160px, 26vw, 380px);
+  height: 6px;
+  padding: 0;
+  border: 0;
+  border-radius: var(--radius-full);
+  background: var(--surface-sunken);
+  overflow: hidden;
+  cursor: pointer;
+}
+.showcase__track > i {
+  display: block;
+  height: 100%;
+  background: var(--data-keys);
+}
+
+.showcase__range {
+  flex: none;
+  font-size: var(--text-2xs);
+  color: var(--text-tertiary);
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+
+.showcase__hint {
+  flex: none;
+  font-size: var(--text-2xs);
+  color: var(--accent-text);
+  white-space: nowrap;
+}
+
+@media (max-width: 720px) {
+  .showcase__caption { display: none; }
+  .showcase__range { display: none; }
+  .showcase__bar { flex-wrap: wrap; justify-content: center; border-radius: var(--radius-lg); }
+}

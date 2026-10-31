@@ -332,6 +332,38 @@ def test_keyboard_heatmap_can_be_scoped_to_one_app(seeded_client, seeded):
     assert by_id["key_b"]["press_count"] == 0  # key_b 是 chrome 里按的
 
 
+def test_press_stream_keeps_presses_in_order_and_decodes(seeded_client):
+    """时间流逝的数据面：8 次按下、时间升序、下标能落回 keys。
+
+    这个端点的坏法很安静——时间编码错一点是"某天的数字停住"，下标错一位是"某个键
+    永远不亮"。所以断言解出来的具体序列，而不是只看 ``count``。
+    """
+    import base64
+
+    from omnisight.services.press_stream import decode_times
+
+    payload = seeded_client.get(
+        "/api/v1/keyboard/press-stream?from=2026-09-02&to=2026-09-02"
+    ).get_json()
+    assert payload["available"] is True
+    assert payload["from"] == "2026-09-02"
+    assert payload["to"] == "2026-09-02"
+    assert payload["count"] == 7
+    times = decode_times(base64.b64decode(payload["times"]), payload["count"])
+    assert times == sorted(times), "按下必须按时间升序"
+    indices = list(base64.b64decode(payload["indices"]))
+    assert len(indices) == payload["count"]
+    assert max(indices) < len(payload["keys"])
+    # 只有一天，因此天边界的偏移从 0 开始。
+    assert payload["days"] == [{"date": "2026-09-02", "at_ms": 0}]
+    assert payload["start_ms"] > 0
+
+
+def test_press_stream_rejects_a_reversed_range(seeded_client):
+    response = seeded_client.get("/api/v1/keyboard/press-stream?from=2026-09-03&to=2026-09-02")
+    assert response.status_code == 400
+
+
 def test_keyboard_timeline_returns_every_requested_view_in_one_request(seeded_client):
     """一次取回把 KeyTrace 首屏的 4 个请求合成 1 个（05 文档 §4）。"""
     payload = seeded_client.get(

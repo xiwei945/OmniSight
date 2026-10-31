@@ -974,16 +974,62 @@ export interface LiveCounters {
 export interface KeyboardReplayEvent {
   key_id: string;
   t: number;
+  /** 这一次按了多久（毫秒）。键帽按它决定压下去停多久。 */
+  d: number;
+}
+
+/** 一份回放序列自己的账：次数、累计按住时长、平均/最长、按过的键数。 */
+export interface KeyboardReplaySummary {
+  presses: number;
+  held_ms: number;
+  duration_avg_ms: number;
+  duration_max_ms: number;
+  active_keys: number;
 }
 
 /** 一天的回放序列。 */
 export interface KeyboardReplayResponse extends Envelope {
   available: boolean;
   events: KeyboardReplayEvent[];
+  /** 这一份序列的汇总；拿不到序列时为 null。 */
+  summary: KeyboardReplaySummary | null;
   /** 一天按下超过上限被截断时为真——不假装放完了。 */
   truncated: boolean;
   /** 上限本身，供界面说明"放的是前 N 次"。 */
   limit: number;
+}
+
+/** 逐次按键流里一天的起点。日期与偏移都在服务端算好，前端不碰时区。 */
+export interface PressStreamDay {
+  /** `YYYY-MM-DD` */
+  date: string;
+  /** 相对流起点（`start_ms`）的毫秒偏移。 */
+  at_ms: number;
+}
+
+/**
+ * 一段时间内的逐次按下，供时间流逝动画逐条累加。
+ *
+ * 时间与键下标走两段 base64 二进制：几十万次按下用对象数组会是十几 MB，这里约 2 MB。
+ * `times` 是 LEB128 增量（n 个值加起来是绝对偏移），`indices` 是 `keys` 的下标
+ * （`index_width` 为 2 时是小端 uint16）。
+ */
+export interface PressStreamResponse {
+  available: boolean;
+  from: string;
+  to: string;
+  /** 区间起点（Unix 毫秒）。`times` 里的偏移都相对它。 */
+  start_ms: number;
+  /** 下标表：`indices` 里的数字指向这里。 */
+  keys: string[];
+  /** 下标宽度：1 = uint8，2 = uint16。 */
+  index_width: number;
+  times: string;
+  indices: string;
+  count: number;
+  days: PressStreamDay[];
+  /** 超过上限被截断时为真，界面要写明只放了一部分。 */
+  truncated: boolean;
 }
 
 /** `keypress` 事件：**只有 key_id**，没有时间戳、没有顺序（08 文档 §2）。 */

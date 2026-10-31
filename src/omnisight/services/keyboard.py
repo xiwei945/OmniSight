@@ -13,13 +13,14 @@
 
 from __future__ import annotations
 
-from datetime import date, timedelta
+from datetime import date, datetime, time, timedelta
 
 from ..capture import keymap, layouts
 from . import formatting
 from .apps import AppService
 from .context import ServiceContext
 from .period import Period, PeriodRequest
+from .press_stream import encode_events
 
 METRICS: tuple[str, ...] = (
     "press_count",
@@ -58,6 +59,66 @@ class KeyboardService:
         if not self._ctx.config.capture.store_raw_key_events:
             return None
         return self._ctx.key_repo.replay_day(day, self._ctx.timezone)
+
+    #: 时间流逝最多回看这么多天。再长就不是"看自己的键盘"，而是"放一部电影"了，
+    #: 而且载荷会从 2 MB 涨到几十 MB。
+    PRESS_STREAM_SPAN_DAYS = 365
+
+    def raw_months(self) -> list[str]:
+        """库里真实存在的原始事件月份，供"时间流逝"默认从最早一天开始。"""
+        return self._ctx.key_repo.raw_months()
+
+    def press_stream(self, start_day: str, end_day: str) -> dict | None:
+        """逐次按键流（时间流逝动画）。见 :mod:`omnisight.services.press_stream`。
+
+        区间会被**裁到第一条真实按下所在的那天**：库里最早的月表可能比数据早好几天
+        （建表与首次写入不同时），从 0 点开始会让动画先空转一段没有任何按键的时间。
+
+        返回 ``None`` 表示原始事件根本没开；空区间返回 ``count == 0`` 的可用载荷——
+        那是"这段没敲键盘"，与"功能不可用"是两回事。
+        """
+        if not self._ctx.config.capture.store_raw_key_events:
+            return None
+        try:
+            start = date.fromisoformat(start_day)
+            end = date.fromisoformat(end_day)
+        except (TypeError, ValueError):
+            return None
+        if end < start:
+            return None
+        if (end - start).days > self.PRESS_STREAM_SPAN_DAYS:
+            start = end - timedelta(days=self.PRESS_STREAM_SPAN_DAYS)
+        payload = self._ctx.key_repo.press_stream(
+            start.isoformat(), end.isoformat(), tz=self._ctx.timezone
+        )
+        if payload is None:
+            return None
+        tz = self._ctx.timezone
+        events: list[tuple[str, int]] = payload["events"]
+        if events:
+            first_day = datetime.fromtimestamp(events[0][1] / 1_000_000_000, tz=tz).date()
+        else:
+            first_day = start
+        start_ms = int(datetime.combine(first_day, time.min, tzinfo=tz).timestamp() * 1000)
+        encoded = encode_events(events, start_ms=start_ms)
+        days: list[dict[str, object]] = []
+        cursor = first_day
+        while cursor <= end:
+            at_ms = (
+                int(datetime.combine(cursor, time.min, tzinfo=tz).timestamp() * 1000) - start_ms
+            )
+            # 空天也保留：动画按真实时间推进，跳过它会让人以为日期接不上。
+            days.append({"date": cursor.isoformat(), "at_ms": at_ms})
+            cursor += timedelta(days=1)
+        return {
+            "available": True,
+            "from": first_day.isoformat(),
+            "to": end.isoformat(),
+            "start_ms": start_ms,
+            **encoded,
+            "days": days,
+            "truncated": bool(payload["truncated"]),
+        }
 
     def resolve_family(self, requested: str | None = None) -> tuple[str, str, list[dict]]:
         """返回 ``(family, source, warnings)``。

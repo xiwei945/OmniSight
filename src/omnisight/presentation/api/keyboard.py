@@ -72,11 +72,57 @@ def register(app: Flask, context: Any) -> None:
                     **envelope(context),
                     "available": False,
                     "events": [],
+                    # 形状恒定：拿不到序列的位置也给 summary，前端不必为"有没有这个键"分叉。
+                    "summary": None,
                     "truncated": False,
                     "limit": 0,
                 }
             )
         return jsonify({**envelope(context), "available": True, **payload})
+
+    @app.get("/api/v1/keyboard/press-stream")
+    def keyboard_press_stream():
+        """逐次按键流：时间流逝动画的数据面（见 services/press_stream.py）。
+
+        默认区间是"库里最早的原始月份 → 今天"，一次把整段拿到前端。不做分页：
+        这个动画本来就要从头连放，分页会让"第 N 天"在换页时断掉。
+        """
+        from datetime import date
+
+        to_day = (request.args.get("to") or context.services.context.today().isoformat()).strip()
+        start_arg = (request.args.get("from") or "").strip()
+        try:
+            date.fromisoformat(to_day)
+            if start_arg:
+                date.fromisoformat(start_arg)
+        except ValueError as exc:
+            raise ApiError(
+                "日期格式应为 YYYY-MM-DD", code="invalid_param", field="from"
+            ) from exc
+        if not start_arg:
+            months = context.services.keyboard.raw_months()
+            start_arg = f"{months[0]}-01" if months else to_day
+        if start_arg > to_day:
+            raise ApiError("from 不能晚于 to", code="invalid_param", field="from")
+        payload = context.services.keyboard.press_stream(start_arg, to_day)
+        if payload is None:
+            # 形状恒定：原始事件没开时前端照常渲染，只是给一句说明。
+            return jsonify(
+                {
+                    "available": False,
+                    "from": start_arg,
+                    "to": to_day,
+                    "start_ms": 0,
+                    "keys": [],
+                    "index_width": 1,
+                    "times": "",
+                    "indices": "",
+                    "count": 0,
+                    "days": [],
+                    "truncated": False,
+                }
+            )
+        return jsonify(payload)
 
     @app.get("/api/v1/keyboard/keys/<key_id>")
     def keyboard_key(key_id: str):

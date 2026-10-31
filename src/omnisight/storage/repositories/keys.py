@@ -1,13 +1,13 @@
 """按键统计查询（M1 只做"够验证闭环"的量，M2 补齐 05 文档 §4 的全部端点）。
 
 一条铁律贯穿本文件：**任何常规查询都不扫 `raw_key_events_*`**（01 文档 §4.1）。
-下面每个方法都只碰 ``agg_*``，主键点查或范围扫。唯一允许扫原始表的是节奏分析，
-那是 M4 的独立入口且必须带时间窗上限。
+下面每个方法都只碰 ``agg_*``，主键点查或范围扫。允许扫原始表的是两条**显式的回放路径**
+（``replay_day`` 与 ``press_stream``），都带时间窗与 ``LIMIT``，且只服务动画。
 """
 
 from __future__ import annotations
 
-from datetime import datetime, timedelta, tzinfo
+from datetime import date, datetime, timedelta, tzinfo
 from sqlite3 import Connection, DatabaseError
 
 from .. import schema
@@ -118,11 +118,19 @@ class KeyRepository:
     REPLAY_LIMIT = 20_000
 
     def replay_day(self, day: str, tz: tzinfo | None = None) -> dict | None:
-        """某一天的有序按下序列，带相对当天 0 点的毫秒偏移。
+        """某一天的有序按下序列，带相对当天 0 点的毫秒偏移与**按住时长**。
 
         这是**唯一允许按天扫一次性原始事件表的读路径**（01 文档 §4.1 的例外），因此
         它必须能撑住最坏情况：加 ``LIMIT`` 与升序索引 ``idx_rke_*_down`` 走同一条路，
         超出的部分直接不取。
+
+        每条事件带 ``d``（这一次按了多久，毫秒）。**不加它，回放只能画固定时长的脉冲**：
+        真实的输入里 40ms 与 200ms 是两种手感，而"打字"与"闪灯"的差别正在这里。时长在
+        采集时已经算好并落在原始表里（``raw_key_events.duration_ms``），这里只是把它
+        读出来——回放是唯一会用到它、也是唯一允许读原始表的地方。
+
+        ``summary`` 是**这一份序列自己的账**，不是当天聚合表的总数：序列被 ``LIMIT``
+        截断时（见 ``truncated``），"放了多少、按住多久"要和画面上真的放出来的次数对得上。
 
         返回 ``None`` 表示那个月的原始表不存在（``store_raw_key_events`` 关闭，或那个
         月没有数据）——调用方据此回 ``available: false``，而不是一张空的序列。
@@ -143,7 +151,7 @@ class KeyRepository:
             return None
         try:
             rows = conn.execute(
-                f"SELECT key_id, down_ts_ns FROM {table} "
+                f"SELECT key_id, down_ts_ns, duration_ms FROM {table} "
                 "WHERE down_ts_ns >= ? AND down_ts_ns < ? "
                 "ORDER BY down_ts_ns, id LIMIT ?",
                 (start_ns, end_ns, self.REPLAY_LIMIT + 1),
@@ -157,10 +165,110 @@ class KeyRepository:
                 "key_id": str(row["key_id"]),
                 # 毫秒偏移。整数足够——回放的节奏误差远粗于 1ms，浮点只会让载荷变大。
                 "t": int((int(row["down_ts_ns"]) - start_ns) // 1_000_000),
+                # 按住时长，同样取整到毫秒。前端拿它决定键帽压下去停多久。
+                "d": max(0, int(round(float(row["duration_ms"] or 0)))),
             }
             for row in rows
         ]
-        return {"events": events, "truncated": truncated, "limit": self.REPLAY_LIMIT}
+        held_ms = sum(event["d"] for event in events)
+        return {
+            "events": events,
+            "summary": {
+                "presses": len(events),
+                # 累计按住时长：这些按下各自持续了多久之和，**不是**"从第一次到最后一次"的跨度。
+                "held_ms": held_ms,
+                "duration_avg_ms": round(held_ms / len(events), 1) if events else 0.0,
+                "duration_max_ms": max((event["d"] for event in events), default=0),
+                "active_keys": len({event["key_id"] for event in events}),
+            },
+            "truncated": truncated,
+            "limit": self.REPLAY_LIMIT,
+        }
+
+    #: 时间流逝一次最多读这么多条按下。两年历史 × 一年 500 万次的话，这个上限会在
+    #: 数据量爆炸前先拦住请求——截断标记随载荷回给前端，界面写明"只放了一部分"。
+    PRESS_STREAM_LIMIT = 2_000_000
+
+    def raw_months(self) -> list[str]:
+        """库里实际存在的原始事件月份（``YYYY-MM``，升序）。
+
+        「时间流逝」默认从最早一个月开跑。用 ``sqlite_master`` 而不是 ``Partitions``：
+        后者带内存缓存，而这里只需要一次只读清单。
+        """
+        rows = self._conn().execute(
+            "SELECT name FROM sqlite_master WHERE type = 'table' "
+            "AND name LIKE 'raw_key_events_%' ORDER BY name"
+        ).fetchall()
+        months: list[str] = []
+        for row in rows:
+            name = str(row["name"])
+            suffix = name.removeprefix("raw_key_events_")
+            if len(suffix) == 7 and suffix[4] == "_":
+                months.append(suffix.replace("_", "-"))
+        return months
+
+    def press_stream(
+        self,
+        start_day: str,
+        end_day: str,
+        *,
+        tz: tzinfo | None = None,
+        limit: int = PRESS_STREAM_LIMIT,
+    ) -> dict | None:
+        """区间内的**逐次按下**，按时间升序，供时间流逝动画逐条累加。
+
+        与 :meth:`replay_day` 同一个例外（01 文档 §4.1）：这是允许扫原始表的第二条
+        读路径，同样带 ``LIMIT`` 并走 ``idx_rke_*_down``。区别是它跨月：按月表逐段查，
+        月表本身按时间切开，拼接后仍然全局有序，不需要在内存里再排一次。
+
+        返回 ``None`` 表示**一条原始表都没有**（``store_raw_key_events`` 关着，或从没
+        写过）——调用方据此回 ``available: false``。月份存在但区间内没有按下时返回
+        空序列，那是"这段没敲键盘"，不是"功能不可用"。
+        """
+        try:
+            start = date.fromisoformat(start_day)
+            end = date.fromisoformat(end_day)
+        except (ValueError, TypeError):
+            return None
+        if end < start:
+            return None
+        start_midnight = datetime.combine(start, datetime.min.time())
+        end_midnight = datetime.combine(end + timedelta(days=1), datetime.min.time())
+        if tz is not None:
+            start_midnight = start_midnight.replace(tzinfo=tz)
+            end_midnight = end_midnight.replace(tzinfo=tz)
+        start_ns = int(start_midnight.timestamp() * 1_000_000_000)
+        end_ns = int(end_midnight.timestamp() * 1_000_000_000)
+
+        conn = self._conn()
+        existing = set(self.raw_months())
+        events: list[tuple[str, int]] = []
+        truncated = False
+        cursor = start.replace(day=1)
+        while cursor <= end:
+            month = cursor.strftime("%Y-%m")
+            if month in existing:
+                table = schema.raw_table_name(month)
+                try:
+                    rows = conn.execute(
+                        f"SELECT key_id, down_ts_ns FROM {table} "
+                        "WHERE down_ts_ns >= ? AND down_ts_ns < ? "
+                        "ORDER BY down_ts_ns, id LIMIT ?",
+                        (start_ns, end_ns, limit - len(events) + 1),
+                    ).fetchall()
+                except DatabaseError:
+                    rows = []
+                for row in rows:
+                    events.append((str(row["key_id"]), int(row["down_ts_ns"])))
+                if len(events) > limit:
+                    truncated = True
+                    events = events[:limit]
+                    break
+            # 下个月一号。+32 天再归到 1 号，避开各月天数差异。
+            cursor = (cursor + timedelta(days=32)).replace(day=1)
+        if not existing:
+            return None
+        return {"events": events, "truncated": truncated, "limit": limit}
 
     def press_total(self) -> int:
         row = self._conn().execute("SELECT SUM(press_count) FROM agg_key_total").fetchone()

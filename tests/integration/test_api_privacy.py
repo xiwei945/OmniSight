@@ -26,10 +26,12 @@ PARAM_VALUES = {"app_id": "1", "key_id": "key_a", "process_name": "code.exe"}
 #: 需要副作用或长连接的路由不在只读遍历里跑；它们各自有专门的用例。
 SKIP_ENDPOINTS = {"stream", "capture_pause", "static"}
 
-#: 允许扫原始事件表的端点。除"应用小时回溯"之外，回放是**唯一以"逐次顺序"为语义的
-#: 读路径**——热力图、时间线、洞察全都只碰 ``agg_*``，而回放要的就是原始事件的先后，
-#: 绕不过去。它因此在下一条遍历里被排除，改由专门的用例盯住"有单日窗上限"。
-RAW_TABLE_ENDPOINTS = frozenset({"/api/v1/keyboard/replay"})
+#: 允许扫原始事件表的端点。热力图、时间线、洞察全都只碰 ``agg_*``；这**两条**是例外，
+#: 因为它们要的是"逐次顺序"，绕不过原始表：
+#:   - ``replay``：单日回放，带单日窗与 2 万条上限；
+#:   - ``press-stream``：时间流逝，带 365 天窗与 200 万条上限（`press_stream.py`）。
+#: 它们因此在下一条遍历里被排除，改由专门的用例盯住"有窗、有上限"。
+RAW_TABLE_ENDPOINTS = frozenset({"/api/v1/keyboard/replay", "/api/v1/keyboard/press-stream"})
 
 
 def _readable_paths(app: Flask) -> list[str]:
@@ -210,6 +212,19 @@ def test_the_documented_raw_table_exceptions_are_bounded_to_a_single_day(
         seeded_client, database, "/api/v1/keyboard/replay?date=2026-09-02"
     )[0]
     assert "LIMIT" in replay_sql, "回放缺行数上限"
+
+
+def test_press_stream_is_also_bounded(seeded_client, database):
+    """时间流逝是第二条原始表例外：跨月可以，但每条查询都要有时间窗与行数上限。"""
+    touched = _sql_touching_raw(
+        seeded_client,
+        database,
+        "/api/v1/keyboard/press-stream?from=2026-08-01&to=2026-09-02",
+    )
+    assert touched, "press-stream 应当扫原始表"
+    for sql in touched:
+        assert "down_ts_ns >=" in sql and "down_ts_ns <" in sql, "缺时间窗"
+        assert "LIMIT" in sql, "缺行数上限"
 
 
 def test_the_exception_says_so_instead_of_drawing_zeros_when_raw_events_are_off(

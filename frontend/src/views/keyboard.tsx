@@ -31,6 +31,7 @@ import { HeatStrip } from '../components/HeatStrip.tsx';
 import { Icon } from '../components/Icon.tsx';
 import { HeatLegend, KeyboardView } from '../components/KeyboardView.tsx';
 import { KeyTable, Orphans } from '../components/KeyboardReadouts.tsx';
+import { KeyboardShowcase } from '../components/KeyboardShowcase.tsx';
 import { ReplayBar } from '../components/ReplayBar.tsx';
 import { stop as stopReplay } from '../core/replay.ts';
 import { webglAvailable } from '../core/webgl.ts';
@@ -183,6 +184,9 @@ export function View() {
   const [surface, setSurface] = useState<Surface>(() => (webglAvailable() ? '3d' : 'flat'));
   // 3D 的两种观感（见 LOOKS）。它只改渲染，所以和 surface 一样留在视图内部状态。
   const [look, setLook] = useState<Look>('heat');
+  // 全屏「时间流逝」展示层。开着的时候不渲染卡内的 3D——两块 WebGL 上下文一起跑
+  // 没有必要，而且展示层要占满整屏。
+  const [showcase, setShowcase] = useState(false);
   // 时间尺度**只改这一张图怎么画**，不改取哪一批数（四个粒度是同一次请求取回的），
   // 因此它是视图内部状态、留在卡头，不进 store 也不进 URL（14 文档 §4.1 的分界）。
   const [grain, setGrain] = useState<Grain>('days');
@@ -275,6 +279,18 @@ export function View() {
                     label="3D 观感"
                   />
                 ) : null}
+                {/* 全屏展示：按真实按键顺序把一段历史放成动画。平面视图下也能开。 */}
+                <button
+                  type="button"
+                  className="button"
+                  onClick={() => {
+                    // 两个动画同时跑没有意义：开展示层前先停掉当天的回放。
+                    stopReplay();
+                    setShowcase(true);
+                  }}
+                >
+                  时间流逝
+                </button>
                 {/* 密度只影响平面键帽的尺寸，3D 下不适用。 */}
                 {surface === 'flat' ? (
                   <Segmented
@@ -304,7 +320,7 @@ export function View() {
             <SkeletonRows count={1} />
           ) : (
             <>
-              {surface === '3d' ? (
+              {surface === '3d' && !showcase ? (
                 <Suspense fallback={<SkeletonRows count={1} />}>
                   <Keyboard3D
                     heatmap={heatmap.data}
@@ -392,6 +408,8 @@ export function View() {
           <Ergonomics />
         </Card>
       </div>
+
+      {showcase ? <KeyboardShowcase onClose={() => setShowcase(false)} /> : null}
     </>
   );
 }
