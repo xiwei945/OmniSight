@@ -105,6 +105,14 @@ interface KeyEntry {
   label: HTMLDivElement;
   valueNode: HTMLSpanElement;
   level: number;
+  /**
+   * 上一次写进 `transform` 的屏幕位置。相机每帧都在飘，但**大部分帧的位移不到半像素**
+   * ——按半像素去重，静止键位就一次 DOM 写都不发生。见 `placeLabels`。
+   */
+  lastX: number;
+  lastY: number;
+  /** 上一次印上键面的次数：没变就跳过格式化（`formatCount` 是这条路径上最贵的一格）。 */
+  lastCount: number;
 }
 
 interface SceneHandle {
@@ -197,6 +205,11 @@ function createKeyboardScene(
   // 上盖的 4mm 台级读不出来，键帽上下动也没有影子跟着走——水波看起来就像没动。
   renderer.shadowMap.enabled = true;
   renderer.shadowMap.type = THREE.PCFSoftShadowMap;
+  // **阴影贴图按需重画**：灯和键盘都是静的，只有键帽在起伏/下沉时影子才会变。
+  // 交给 three 每帧重画一次 2048² 的投影（还有 104 个投影物）是这台页面里最贵的一笔，
+  // 而日常模式下键帽根本不动——那一遍纯属白烧。见 loop 里的 `capsMoved`。
+  renderer.shadowMap.autoUpdate = false;
+  renderer.shadowMap.needsUpdate = true;
   const canvas = renderer.domElement;
   canvas.style.width = '100%';
   canvas.style.height = '100%';
@@ -241,6 +254,8 @@ function createKeyboardScene(
   const pointer = new THREE.Vector2();
   const UP = new THREE.Vector3(0, 1, 0);
   const swayDirection = new THREE.Vector3();
+  /** 投影用的临时向量。`placeLabels` 每帧 104 次，不在这里 new。 */
+  const scratch = new THREE.Vector3();
 
   const keys = new Map<string, KeyEntry>();
   const pickTargets: THREE.Mesh[] = [];
@@ -249,6 +264,9 @@ function createKeyboardScene(
   let ramp = cssHeatRamp();
   /** 时间流逝专用色阶（冷 → 暖）。见 tokens.css 的 `--show-heat-*`。 */
   let showRamp = cssShowRamp();
+  /** 上面那一档色阶预先解析好的 three 颜色与数字墨色（热路径上不再解析字符串）。 */
+  let showColors = showRamp.map((color) => new THREE.Color(color));
+  let showInk = showRamp.map((color) => inkFor(color));
   let levels = new Map<string, number>();
   let values = new Map<string, HeatmapKey>();
   let metric = 'press_count';
@@ -385,13 +403,18 @@ function createKeyboardScene(
    * 与 `layoutLabels` 分开是因为**相机在时间流逝里一直在动**：每帧重算字号要走
    * `offsetWidth`（强制回流），104 个键一次就要几毫秒；位置只需要一次投影矩阵乘法。
    * 字号沿用上一次布局算好的 `widthPx/offsetPx`。
+   *
+   * **半像素去重**：这条路径每帧都跑，而镜头环绕慢到多数帧的位移不足半像素。位移不到
+   * 半像素就不写 DOM——写一次 CSS 变换要走样式重算 + 合成层更新，104 个键乘 60fps
+   * 是这笔账里最容易漏掉的一项（见 2026-10-31 的帧剖析：`placeLabels` 是 JS 侧第一）。
+   * `force` 用在必须对齐的时刻：首次布局、尺寸变化、seek 之后。
    */
-  function placeLabels(): void {
+  function placeLabels(force = false): void {
     if (!ready) return;
     const width = container.clientWidth || 1;
     const height = container.clientHeight || 1;
     for (const entry of keys.values()) {
-      const projected = entry.center.clone().project(camera);
+      const projected = scratch.copy(entry.center).project(camera);
       const x = (projected.x * 0.5 + 0.5) * width;
       let y = (-projected.y * 0.5 + 0.5) * height;
       // 读数落在键面下半部（字符在上缘）：往下挪约 1/4 键高。
@@ -399,6 +422,9 @@ function createKeyboardScene(
       let labelY = y + entry.offsetPx;
       if (entry.offsetPx > 0 && labelY > height - 24) labelY = y - entry.offsetPx * 0.8;
       y = Math.min(height - 18, Math.max(18, labelY));
+      if (!force && Math.abs(x - entry.lastX) < 0.5 && Math.abs(y - entry.lastY) < 0.5) continue;
+      entry.lastX = x;
+      entry.lastY = y;
       entry.label.style.transform = `translate(-50%, -50%) translate(${x}px, ${y}px)`;
     }
   }
@@ -408,9 +434,10 @@ function createKeyboardScene(
     if (!ready) return;
     const width = container.clientWidth || 1;
     const edge = new THREE.Vector3();
+    const axial = new THREE.Vector3();
     for (const entry of keys.values()) {
-      const projected = entry.center.clone().project(camera);
-      edge.copy(entry.center).add(new THREE.Vector3(entry.halfWidth, 0, 0)).project(camera);
+      const projected = scratch.copy(entry.center).project(camera);
+      edge.copy(entry.center).add(axial.set(entry.halfWidth, 0, 0)).project(camera);
       const keyWidthPx = Math.abs(edge.x - projected.x) * 0.5 * width;
       entry.widthPx = keyWidthPx;
       entry.offsetPx = keyWidthPx > 90 ? 0 : Math.min(8, keyWidthPx * 0.12);
@@ -428,7 +455,7 @@ function createKeyboardScene(
         guard += 1;
       }
     }
-    placeLabels();
+    placeLabels(true);
   }
 
   function refresh(): void {
@@ -456,15 +483,23 @@ function createKeyboardScene(
    *
    * 档位用**终值 p95**（流的最后一帧）当分母：动画结尾于是正好落在日常热力图的那套
    * 档位上，不会"放完一片红"。没按过的键不印数字、不上色——和视频里一样，白键就是白键。
+   *
+   * 这条路径按 15Hz 跑，成本全在"别做没用的事"上：
+   *   - 次数没变（`lastCount`）就整格跳过，不调 `formatCount`；
+   *   - 颜色/墨色在色阶变化时预先算成 `THREE.Color` 与 CSS 字符串，热路径上不再解析；
+   *   - `material.needsUpdate` **只在换过贴图的那一次**置位。它是给 shader 重编用的，
+   *     每帧置位会让 three 每帧重走一遍 `setProgram`（2026-10-31 帧剖析里
+   *     `setProgram` + `refreshUniformsCommon` 的来路就是它）。
    */
-  function applyStreamFrame(): void {
+  function applyStreamFrame(force = false): void {
     if (!stream || !streamCursor) return;
     const counts = streamCursor.counts;
     for (const [keyId, entry] of keys) {
       const at = streamIndex.get(keyId);
       const count = at === undefined ? 0 : counts[at];
-      const text = count > 0 ? formatCount(count) : '';
-      if (entry.valueNode.textContent !== text) {
+      if (count !== entry.lastCount) {
+        entry.lastCount = count;
+        const text = count > 0 ? formatCount(count) : '';
         entry.valueNode.textContent = text;
         entry.label.style.display = text ? '' : 'none';
         // 数字长度会变（3 位 → 6 位），字号按"键宽 ÷ 字符数"现算，不走 offsetWidth：
@@ -475,15 +510,27 @@ function createKeyboardScene(
         entry.label.style.fontSize = `${Math.max(6.5, Math.min(13, Math.min(width * 0.34, byLength)))}px`;
       }
       const level = count > 0 ? Math.max(1, heatLevel(count / streamP95)) : 0;
-      if (level === entry.level) continue;
+      if (level === entry.level && !force) continue;
       entry.level = level;
-      const color = showRamp[level] ?? showRamp[0];
-      entry.material.map = neutralMap;
-      entry.material.color.set(color);
-      entry.material.emissive.set('#000000');
+      entry.material.color.copy(showColors[level] ?? showColors[0]);
+      entry.material.emissive.setRGB(0, 0, 0);
       entry.material.emissiveIntensity = 0;
-      entry.material.needsUpdate = true;
-      entry.label.style.color = inkFor(color);
+      // 贴图**从无到有**才算结构变化：装上中性图集那一次要重编 shader，之后就不必了。
+      if (entry.material.map !== neutralMap) {
+        entry.material.map = neutralMap;
+        entry.material.needsUpdate = true;
+      }
+      entry.label.style.color = showInk[level] ?? showInk[0];
+    }
+  }
+
+  /** 清掉"上一次印了什么"的缓存：换流/跳转时必须做，否则新读数会被当成"没变"跳过。 */
+  function resetStreamCache(): void {
+    for (const entry of keys.values()) {
+      entry.lastCount = -1;
+      entry.level = -1;
+      entry.label.style.display = 'none';
+      entry.valueNode.textContent = '';
     }
   }
 
@@ -510,8 +557,9 @@ function createKeyboardScene(
       streamLastFrame = performance.now();
       streamLastRefresh = 0;
       if (ready) {
+        resetStreamCache();
         applyStreamFrame();
-        placeLabels();
+        placeLabels(true);
       }
       return;
     }
@@ -523,7 +571,11 @@ function createKeyboardScene(
       streamSeekApplied = next.seek;
       streamCursor.seek(next.seek);
       streamEnded = false;
-      if (ready) applyStreamFrame();
+      if (ready) {
+        resetStreamCache();
+        applyStreamFrame();
+        placeLabels(true);
+      }
     }
   }
 
@@ -596,11 +648,17 @@ function createKeyboardScene(
   const resize = () => {
     const width = container.clientWidth || 1;
     const height = container.clientHeight || 1;
+    // 像素比按**像素预算**收：4K 屏 150% 缩放时 `dpr=1.5` 等于 1240 万像素，
+    // 集成显卡光清一遍屏就要十几毫秒。超过约 400 万像素就往下收，且不低于 1。
+    const wanted = Math.min(window.devicePixelRatio || 1, 2);
+    const budget = Math.sqrt(4_000_000 / Math.max(1, width * height));
+    renderer.setPixelRatio(Math.max(1, Math.min(wanted, budget)));
     renderer.setSize(width, height, false);
     camera.aspect = width / height;
     camera.updateProjectionMatrix();
     fitCamera();
     layoutLabels();
+    renderer.shadowMap.needsUpdate = true;
   };
   const observer = new ResizeObserver(resize);
   observer.observe(container);
@@ -665,6 +723,9 @@ function createKeyboardScene(
           label,
           valueNode,
           level: 0,
+          lastX: Number.NaN,
+          lastY: Number.NaN,
+          lastCount: -1,
         });
         pickTargets.push(mesh);
       });
@@ -711,6 +772,7 @@ function createKeyboardScene(
 
       fitCamera();
       ready = true;
+      renderer.shadowMap.needsUpdate = true;
       refresh();
       // 时间流逝可能比模型先到：模型就位时补一帧，否则要等到下一次 66ms 节拍才有颜色。
       if (stream) {
@@ -738,7 +800,15 @@ function createKeyboardScene(
 
   const loop = () => {
     raf = window.requestAnimationFrame(loop);
+    // 切到后台就什么都不做：标签页看不见时还在算 104 个投影、跑一遍阴影贴图，
+    // 是笔记电池最长的那根管子。回来时把时钟基准拉平，避免一次大跳。
+    if (document.hidden) {
+      streamLastFrame = performance.now();
+      return;
+    }
     const now = performance.now();
+    /** 这一帧有键帽真的动过吗？动过才重画阴影贴图（见下面的 `shadowMap.autoUpdate`）。 */
+    let capsMoved = false;
     for (const entry of keys.values()) {
       if (entry.rippleAt !== null) {
         const wave = (now - entry.rippleAt) / RIPPLE_MS;
@@ -747,6 +817,7 @@ function createKeyboardScene(
           entry.mesh.position.y = entry.baseY;
           entry.mesh.scale.setScalar(1);
           entry.material.emissiveIntensity = 0;
+          capsMoved = true;
         } else if (wave >= 0 && !reduced) {
           const lift = Math.sin(Math.PI * wave);
           entry.mesh.position.y = entry.baseY + RIPPLE_DEPTH * lift;
@@ -756,6 +827,7 @@ function createKeyboardScene(
           entry.mesh.scale.setScalar(1 + lift * 0.07);
           entry.material.emissive.set('#ffc489');
           entry.material.emissiveIntensity = lift * 0.55;
+          capsMoved = true;
           continue;
         }
       }
@@ -765,14 +837,18 @@ function createKeyboardScene(
         entry.pressStart = null;
         entry.mesh.position.y = entry.baseY;
         entry.material.emissiveIntensity = 0;
+        capsMoved = true;
       } else if (reduced) {
         // 减少动态：不下沉，改用一次高光回弹。
         entry.material.emissive.setRGB(1, 1, 1);
         entry.material.emissiveIntensity = (1 - progress) * 0.45;
       } else {
         entry.mesh.position.y = entry.baseY - PRESS_DEPTH * Math.sin(Math.PI * progress);
+        capsMoved = true;
       }
     }
+    // 键帽没动 → 阴影贴图这一帧一定和上一帧一样，不必重画（2048² 的一次完整投影）。
+    if (capsMoved) renderer.shadowMap.needsUpdate = true;
 
     // 开屏运镜：从远拉近，落位后停下不动（水波要在静止的键盘上才看得清）。
     if (ready && !introDone && fitDistance > 0) {
@@ -818,6 +894,8 @@ function createKeyboardScene(
     // 时间流逝：推进数据时钟，按 15Hz 刷新键面，镜头缓慢环绕。
     if (stream && streamCursor && ready && fitDistance > 0) {
       const data = stream.data;
+      /** 这一帧真的新增了按下吗？没有新按下时键面上的读数不会变，别白刷 104 格。 */
+      let added = 0;
       if (stream.playing && !streamEnded) {
         // 与回放同一条规矩：单帧最多推进 100ms，切后台回来不会一口气倒出上万次按下。
         const delta = Math.min(100, Math.max(0, now - streamLastFrame));
@@ -829,30 +907,34 @@ function createKeyboardScene(
           streamEnded = true;
           callbacks.onStreamEnd();
         }
-        streamCursor.advanceTo(offset);
+        added = streamCursor.advanceTo(offset);
         // 环绕角度只在播放时累加：暂停时镜头也应该停住，否则"暂停"只停数字不停画面。
         streamAngle += delta * 0.00012;
       } else {
         // 暂停/结束时持续把基准拉到 now，继续播放的第一帧才不会跳。
         streamLastFrame = now;
       }
-      swayDirection.copy(CAMERA_DIRECTION).applyAxisAngle(UP, Math.sin(streamAngle) * 0.11);
-      camera.position.copy(modelCenter).addScaledVector(swayDirection, fitDistance);
-      camera.lookAt(modelCenter);
-      camera.updateMatrixWorld();
-      // 相机在动，数字叠层必须跟着重投影；这里只做投影，不量字号。
-      placeLabels();
-      if (now - streamLastRefresh >= STREAM_REFRESH_MS) {
-        streamLastRefresh = now;
-        applyStreamFrame();
-        const dayIndex = dayIndexAt(data, streamCursor.offset);
-        callbacks.onStreamTick({
-          offsetMs: streamCursor.offset,
-          total: streamCursor.total,
-          dayIndex,
-          date: data.days[dayIndex]?.date || data.from,
-          playing: stream.playing && !streamEnded,
-        });
+      // 暂停且没有新按下 → 画面逐字节相同，连投影和重绘都可以省掉（见下面 return）。
+      if (stream.playing || added > 0) {
+        swayDirection.copy(CAMERA_DIRECTION).applyAxisAngle(UP, Math.sin(streamAngle) * 0.11);
+        camera.position.copy(modelCenter).addScaledVector(swayDirection, fitDistance);
+        camera.lookAt(modelCenter);
+        camera.updateMatrixWorld();
+        // 相机在动，数字叠层必须跟着重投影；这里只做投影，不量字号。
+        placeLabels();
+        if (now - streamLastRefresh >= STREAM_REFRESH_MS) {
+          streamLastRefresh = now;
+          // 没有新按下时键面读数不会变，只走读数（进度的刻度得一直动）。
+          if (added > 0) applyStreamFrame();
+          const dayIndex = dayIndexAt(data, streamCursor.offset);
+          callbacks.onStreamTick({
+            offsetMs: streamCursor.offset,
+            total: streamCursor.total,
+            dayIndex,
+            date: data.days[dayIndex]?.date || data.from,
+            playing: stream.playing && !streamEnded,
+          });
+        }
       }
     }
 
@@ -867,6 +949,8 @@ function createKeyboardScene(
     refreshColors() {
       ramp = cssHeatRamp();
       showRamp = cssShowRamp();
+      showColors = showRamp.map((color) => new THREE.Color(color));
+      showInk = showRamp.map((color) => inkFor(color));
       if (ready) refresh();
     },
     dispose() {

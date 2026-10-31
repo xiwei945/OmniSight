@@ -7,7 +7,7 @@
 //
 // **three 仍然只在真正要看 3D 时才加载**：这里对 `Keyboard3D` 用动态 import，和
 // `views/keyboard.tsx` 同一条规矩，否则展示层会把 three 拖进主 chunk。
-import { lazy, Suspense, useEffect, useMemo, useState } from 'react';
+import { lazy, Suspense, useCallback, useEffect, useMemo, useState } from 'react';
 import { createPortal } from 'react-dom';
 import { get } from '../core/api.ts';
 import { decodePressStream } from '../core/press-stream.ts';
@@ -49,6 +49,9 @@ export function KeyboardShowcase({ onClose }: { onClose: () => void }) {
   const [rhythm, setRhythm] = useState<Rhythm>('normal');
   const [seek, setSeek] = useState<number | null>(null);
   const [tick, setTick] = useState<StreamTick | null>(null);
+
+  /** 放到结尾时把控制条切回"重播"（稳定引用：它进 `stage` 的 memo 依赖）。 */
+  const endAtTail = useCallback(() => setPlaying(false), []);
 
   useEffect(() => {
     let cancelled = false;
@@ -101,6 +104,23 @@ export function KeyboardShowcase({ onClose }: { onClose: () => void }) {
     [data, rhythm, playing, seek],
   );
 
+  // 读数每 66ms 回一次，但**场景元素不该跟着重建**：它带来的是 three 侧一整棵子树的 diff，
+  // 而 `source` 没变时那棵树一个字节都不用改。真正的位移/数字刷新全在场景内部的 rAF 里。
+  const stage = useMemo(
+    () =>
+      source ? (
+        <Keyboard3D
+          heatmap={null}
+          metric="press_count"
+          mode="heat"
+          stream={source}
+          onStreamTick={setTick}
+          onStreamEnd={endAtTail}
+        />
+      ) : null,
+    [source, endAtTail],
+  );
+
   const span = data?.spanMs || 1;
   const offset = Math.min(span, Math.max(0, tick?.offsetMs ?? 0));
   const progress = offset / span;
@@ -142,18 +162,7 @@ export function KeyboardShowcase({ onClose }: { onClose: () => void }) {
       </div>
 
       <div className="showcase__stage">
-        {status === 'ready' && source ? (
-          <Suspense fallback={null}>
-            <Keyboard3D
-              heatmap={null}
-              metric="press_count"
-              mode="heat"
-              stream={source}
-              onStreamTick={setTick}
-              onStreamEnd={() => setPlaying(false)}
-            />
-          </Suspense>
-        ) : null}
+        {status === 'ready' && stage ? <Suspense fallback={null}>{stage}</Suspense> : null}
         {status !== 'ready' ? (
           <div className="showcase__veil">
             <span>{status === 'loading' ? '正在读取按键记录…' : note}</span>

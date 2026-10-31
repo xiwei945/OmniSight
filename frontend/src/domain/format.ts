@@ -34,9 +34,24 @@ export function formatDurationShort(seconds: number | null | undefined): string 
   return rest === 0 ? `${hours}h` : `${hours}h${rest}m`;
 }
 
-/** 千分位。按键数动辄六位，不分组读不出量级。 */
+/**
+ * 千分位。按键数动辄六位，不分组读不出量级。
+ *
+ * **不用 `toLocaleString`**：它每次都要走一遍 Intl（查 locale、造格式化器），在时间流逝
+ * 那条路径上是 118 个键乘 15Hz 的调用量——2026-10-31 的帧剖析里它单独占了 11%。
+ * 这里手写分组，输出与 `zh-CN` 逐字相同（`,` 分隔、无小数），
+ * `tests/frontend/format.test.ts` 钉住这三个值。
+ */
 export function formatCount(value: number | null | undefined): string {
-  return Math.trunc(Number(value) || 0).toLocaleString('zh-CN');
+  const number = Math.trunc(Number(value) || 0);
+  if (number < 1000 && number > -1000) return String(number);
+  const digits = String(Math.abs(number));
+  let grouped = '';
+  for (let end = digits.length; end > 0; end -= 3) {
+    const start = Math.max(0, end - 3);
+    grouped = grouped ? `${digits.slice(start, end)},${grouped}` : digits.slice(start, end);
+  }
+  return number < 0 ? `-${grouped}` : grouped;
 }
 
 export function formatMs(ms: number | null | undefined): string {

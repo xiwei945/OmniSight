@@ -29,7 +29,7 @@ import sys
 import threading
 import webbrowser
 from dataclasses import replace
-from datetime import datetime
+from datetime import date, datetime
 from pathlib import Path
 from zoneinfo import ZoneInfo
 
@@ -39,7 +39,7 @@ if str(ROOT / "src") not in sys.path:
 if str(ROOT / "tools") not in sys.path:
     sys.path.insert(0, str(ROOT / "tools"))
 
-from flask import request  # noqa: E402
+from flask import redirect, request  # noqa: E402
 
 import _devlive  # noqa: E402
 from omnisight.adapters.ports import Capabilities  # noqa: E402
@@ -180,6 +180,11 @@ def ensure_database(
     播种走 ``tools/seed.py``，也就是**生产写入路径**（``EventQueue`` → ``StorageWriter``）。
     不另写一份 INSERT：那样造出的库形态与真实的不同，而 UI 上"聚合缺一档"与"没有数据"
     长得一模一样，用假形态的库看不出来（11 文档 §5）。
+
+    **每次启动都把库补到今天**。合成数据是以"播种子那天"为终点的，隔两天再看，仪表盘
+    默认停在「今天」——而今天一行都没有，整页就是"这段时间没有记录"。那不是空态坏了，
+    是库真的过期了，但看起来和"这个网页没有数据"完全一样（2026-10-31 就是这么被误判的）。
+    补齐只写缺的那几天，不重播历史，几秒钟的事。
     """
     import seed as seed_tool
 
@@ -190,16 +195,33 @@ def ensure_database(
     db_path.parent.mkdir(parents=True, exist_ok=True)
     db = Database(db_path)
     migrate(db)
+    zone = ZoneInfo(tz)
+    today = datetime.now(zone).date()
     if existed:
+        latest = _latest_day(db)
+        if latest is not None and latest < today:
+            missing = (today - latest).days
+            if not quiet:
+                print(f"库里最后一天是 {latest}，补 {missing} 天到今天")
+            seed_tool.seed(
+                db,
+                days=missing,
+                end=today,
+                tz=zone,
+                rng=random.Random(20260901 + missing),
+                store_raw=True,
+                gap_days=0,
+                titles=True,
+                progress=False,
+            )
         _apply_auto_categories(db, quiet=quiet)
         return db
-    zone = ZoneInfo(tz)
     if not quiet:
         print(f"正在播种 {days} 天的合成数据 → {db_path}")
     report = seed_tool.seed(
         db,
         days=days,
-        end=datetime.now(zone).date(),
+        end=today,
         tz=zone,
         rng=random.Random(20260901),
         store_raw=True,
@@ -211,6 +233,21 @@ def ensure_database(
         print(f"播种完成：{report.render()}")
     _apply_auto_categories(db, quiet=quiet)
     return db
+
+
+def _latest_day(db: Database) -> date | None:
+    """库里最后一天有记录的日子。取 ``usage_session``：它是每次前台切换都会写的那张表，
+    比 ``agg_*`` 稳——聚合可能因为一次中断少一档，原始表在月表下面还藏着。"""
+    with db.transaction() as conn:
+        row = conn.execute("select max(day_bucket) as day from usage_session").fetchone()
+        if not row or not row["day"]:
+            row = conn.execute("select max(day_bucket) as day from agg_app_day").fetchone()
+    if not row or not row["day"]:
+        return None
+    try:
+        return date.fromisoformat(row["day"])
+    except ValueError:
+        return None
 
 
 def _apply_auto_categories(db: Database, *, quiet: bool = False) -> None:
@@ -280,6 +317,7 @@ def build_app(
     )
     app = create_app(context)
     _disable_static_cache(app)
+    _with_dev_token(app)
     if live_reload:
         # 产物变了就让页面自己刷新（见 tools/_devlive.py）。默认不开：它给页面加了一段
         # 生产没有的脚本，而截图与版面报告应该拍到与生产一致的那张页面。
@@ -307,6 +345,32 @@ def _disable_static_cache(app) -> None:
         if request.path.startswith("/static/") or request.path == "/":
             response.headers["Cache-Control"] = "no-store, must-revalidate"
         return response
+
+
+#: 三个页面外壳（``presentation/web.py:shell``）。它们免令牌，但**外壳里的 `data-token`
+#: 只从 `?token=` 取**，所以不带参数的地址打开就是一张「缺少访问令牌」的卡片。
+_SHELL_PAGES = ("/", "/settings", "/about")
+
+
+def _with_dev_token(app) -> None:
+    """开发服务器给自己补上令牌：直接打开 ``http://127.0.0.1:6180/`` 也能看到数据。
+
+    生产里那条 URL 由托盘给出、天然带着 ``?token=``；开发时人是照终端/聊天窗口里的地址
+    粘的，粘到的常常是不带参数的那一条，于是首屏是一张空卡片——看起来就是"这个网页没有
+    数据"。开发令牌本来就是公开常量（见 `DEV_TOKEN`），重定向到带令牌的同一个地址不多
+    泄露任何东西，却省掉每次都要回来核对一遍 URL。
+
+    只碰这三个外壳，且只碰 GET；API 的令牌校验一个字没改。
+    """
+
+    @app.before_request
+    def _bootstrap_token():
+        if request.method != "GET" or request.args.get("token"):
+            return None
+        if request.path not in _SHELL_PAGES:
+            return None
+        # 重定向目标不带 fragment，浏览器会保留原地址的 `#/keyboard` 那一段。
+        return redirect(f"{request.path}?token={DEV_TOKEN}")
 
 
 def build_parser() -> argparse.ArgumentParser:
