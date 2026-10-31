@@ -1,201 +1,234 @@
 {
-  "_AboutContent-q4647I-d.js": {
-    "file": "assets/AboutContent-q4647I-d.js",
+  "_AboutContent-DXF4RmAb.js": {
+    "file": "assets/AboutContent-DXF4RmAb.js",
     "name": "AboutContent",
     "imports": [
-      "_degraded-e5bpAI9F.js"
+      "_degraded-CHoep9Ns.js"
     ]
   },
-  "_Card-C4D6OaLH.js": {
-    "file": "assets/Card-C4D6OaLH.js",
+  "_AppGrid-Dxp-aGM-.js": {
+    "file": "assets/AppGrid-Dxp-aGM-.js",
+    "name": "AppGrid",
+    "imports": [
+      "_degraded-CHoep9Ns.js",
+      "_controls-BqnHbx0e.js"
+    ]
+  },
+  "_Card-DIaFJFp4.js": {
+    "file": "assets/Card-DIaFJFp4.js",
     "name": "Card",
     "imports": [
-      "_degraded-e5bpAI9F.js"
+      "_degraded-CHoep9Ns.js"
     ]
   },
-  "_Quad-BJDylxEK.js": {
-    "file": "assets/Quad-BJDylxEK.js",
+  "_Quad-BGEu9faY.js": {
+    "file": "assets/Quad-BGEu9faY.js",
     "name": "Quad",
     "imports": [
-      "_degraded-e5bpAI9F.js",
-      "_controls-CMiw_diu.js"
+      "_degraded-CHoep9Ns.js"
     ]
   },
-  "_SettingsPage-ChdhgIq6.js": {
-    "file": "assets/SettingsPage-ChdhgIq6.js",
+  "_SettingsPage-DiIt3G3H.js": {
+    "file": "assets/SettingsPage-DiIt3G3H.js",
     "name": "SettingsPage",
     "imports": [
-      "_degraded-e5bpAI9F.js",
-      "_shell-B56KcAOL.js",
-      "_controls-CMiw_diu.js",
-      "_Card-C4D6OaLH.js"
+      "_degraded-CHoep9Ns.js",
+      "_shell-BR8VnMpZ.js",
+      "_controls-BqnHbx0e.js",
+      "_Card-DIaFJFp4.js"
     ]
   },
-  "_axis-CTtQ86SZ.js": {
-    "file": "assets/axis-CTtQ86SZ.js",
+  "_axis-DY4SNg7k.js": {
+    "file": "assets/axis-DY4SNg7k.js",
     "name": "axis",
     "imports": [
-      "_degraded-e5bpAI9F.js"
+      "_degraded-CHoep9Ns.js"
     ]
   },
-  "_controls-CMiw_diu.js": {
-    "file": "assets/controls-CMiw_diu.js",
+  "_controls-BqnHbx0e.js": {
+    "file": "assets/controls-BqnHbx0e.js",
     "name": "controls",
     "imports": [
-      "_degraded-e5bpAI9F.js",
-      "_shell-B56KcAOL.js"
+      "_degraded-CHoep9Ns.js",
+      "_shell-BR8VnMpZ.js"
     ]
   },
-  "_degraded-e5bpAI9F.js": {
-    "file": "assets/degraded-e5bpAI9F.js",
+  "_degraded-CHoep9Ns.js": {
+    "file": "assets/degraded-CHoep9Ns.js",
     "name": "degraded"
   },
-  "_press-stream-XOZdnXsZ.js": {
-    "file": "assets/press-stream-XOZdnXsZ.js",
+  "_press-stream-Bdui_rNf.js": {
+    "file": "assets/press-stream-Bdui_rNf.js",
     "name": "press-stream",
     "imports": [
-      "_degraded-e5bpAI9F.js"
+      "_degraded-CHoep9Ns.js"
     ]
   },
-  "_shell-B56KcAOL.js": {
-    "file": "assets/shell-B56KcAOL.js",
+  "_scale-bars-DWjPbk9a.js": {
+    "file": "assets/scale-bars-DWjPbk9a.js",
+    "name": "scale-bars",
+    "imports": [
+      "_axis-DY4SNg7k.js"
+    ]
+  },
+  "_shell-BR8VnMpZ.js": {
+    "file": "assets/shell-BR8VnMpZ.js",
     "name": "shell",
     "imports": [
-      "_degraded-e5bpAI9F.js"
+      "_degraded-CHoep9Ns.js"
     ]
   },
-  "_states-h_byhBiI.js": {
-    "file": "assets/states-h_byhBiI.js",
+  "_states-Qok1NqPy.js": {
+    "file": "assets/states-Qok1NqPy.js",
     "name": "states",
     "imports": [
-      "_degraded-e5bpAI9F.js"
+      "_degraded-CHoep9Ns.js"
     ]
   },
   "src/about.tsx": {
-    "file": "assets/about-SCFGrnbC.js",
+    "file": "assets/about-BxVlKQ6d.js",
     "name": "about",
     "src": "src/about.tsx",
     "isEntry": true,
     "imports": [
-      "_degraded-e5bpAI9F.js",
-      "_shell-B56KcAOL.js",
-      "_AboutContent-q4647I-d.js",
-      "_Card-C4D6OaLH.js"
+      "_degraded-CHoep9Ns.js",
+      "_shell-BR8VnMpZ.js",
+      "_AboutContent-DXF4RmAb.js",
+      "_Card-DIaFJFp4.js"
     ]
   },
   "src/components/Keyboard3D.tsx": {
-    "file": "assets/Keyboard3D-6FsYm0IN.js",
+    "file": "assets/Keyboard3D-BTiLW2xg.js",
     "name": "Keyboard3D",
     "src": "src/components/Keyboard3D.tsx",
     "isDynamicEntry": true,
     "imports": [
-      "_degraded-e5bpAI9F.js",
+      "_degraded-CHoep9Ns.js",
       "src/main.tsx",
-      "_press-stream-XOZdnXsZ.js"
+      "_press-stream-Bdui_rNf.js"
     ]
   },
   "src/main.tsx": {
-    "file": "assets/main-DB23bzIZ.js",
+    "file": "assets/main-81ZjbgCL.js",
     "name": "main",
     "src": "src/main.tsx",
     "isEntry": true,
     "imports": [
-      "_degraded-e5bpAI9F.js",
-      "_shell-B56KcAOL.js",
-      "_controls-CMiw_diu.js",
-      "_AboutContent-q4647I-d.js"
+      "_degraded-CHoep9Ns.js",
+      "_shell-BR8VnMpZ.js",
+      "_controls-BqnHbx0e.js",
+      "_AboutContent-DXF4RmAb.js"
     ],
     "dynamicImports": [
       "src/components/Keyboard3D.tsx",
       "src/views/overview.tsx",
       "src/views/apps.tsx",
       "src/views/keyboard.tsx",
+      "src/views/mouse.tsx",
       "src/views/insights.tsx",
       "src/pages/SettingsDrawer.tsx"
     ]
   },
   "src/pages/SettingsDrawer.tsx": {
-    "file": "assets/SettingsDrawer-DI-8d-uu.js",
+    "file": "assets/SettingsDrawer-Dm8tI7LV.js",
     "name": "SettingsDrawer",
     "src": "src/pages/SettingsDrawer.tsx",
     "isDynamicEntry": true,
     "imports": [
-      "_degraded-e5bpAI9F.js",
-      "_shell-B56KcAOL.js",
-      "_SettingsPage-ChdhgIq6.js"
+      "_degraded-CHoep9Ns.js",
+      "_shell-BR8VnMpZ.js",
+      "_SettingsPage-DiIt3G3H.js"
     ]
   },
   "src/settings.tsx": {
-    "file": "assets/settings-DFb6hAyG.js",
+    "file": "assets/settings-DJIuIQOL.js",
     "name": "settings",
     "src": "src/settings.tsx",
     "isEntry": true,
     "imports": [
-      "_degraded-e5bpAI9F.js",
-      "_shell-B56KcAOL.js",
-      "_SettingsPage-ChdhgIq6.js"
+      "_degraded-CHoep9Ns.js",
+      "_shell-BR8VnMpZ.js",
+      "_SettingsPage-DiIt3G3H.js"
     ]
   },
   "src/views/apps.tsx": {
-    "file": "assets/apps-BUA_d1SP.js",
+    "file": "assets/apps-gOxFMajY.js",
     "name": "apps",
     "src": "src/views/apps.tsx",
     "isDynamicEntry": true,
     "imports": [
-      "_degraded-e5bpAI9F.js",
-      "_controls-CMiw_diu.js",
+      "_degraded-CHoep9Ns.js",
+      "_controls-BqnHbx0e.js",
       "src/main.tsx",
-      "_Card-C4D6OaLH.js",
-      "_Quad-BJDylxEK.js",
-      "_states-h_byhBiI.js"
+      "_Card-DIaFJFp4.js",
+      "_AppGrid-Dxp-aGM-.js",
+      "_Quad-BGEu9faY.js",
+      "_states-Qok1NqPy.js"
     ]
   },
   "src/views/insights.tsx": {
-    "file": "assets/insights-If2wqfU0.js",
+    "file": "assets/insights-D88ex3m3.js",
     "name": "insights",
     "src": "src/views/insights.tsx",
     "isDynamicEntry": true,
     "imports": [
-      "_degraded-e5bpAI9F.js",
+      "_degraded-CHoep9Ns.js",
       "src/main.tsx",
-      "_Card-C4D6OaLH.js",
-      "_states-h_byhBiI.js",
-      "_axis-CTtQ86SZ.js"
+      "_Card-DIaFJFp4.js",
+      "_states-Qok1NqPy.js",
+      "_axis-DY4SNg7k.js"
     ]
   },
   "src/views/keyboard.tsx": {
-    "file": "assets/keyboard-B1USWlmK.js",
+    "file": "assets/keyboard-DZ4NzI_x.js",
     "name": "keyboard",
     "src": "src/views/keyboard.tsx",
     "isDynamicEntry": true,
     "imports": [
-      "_degraded-e5bpAI9F.js",
-      "_controls-CMiw_diu.js",
+      "_degraded-CHoep9Ns.js",
+      "_controls-BqnHbx0e.js",
       "src/main.tsx",
-      "_Card-C4D6OaLH.js",
-      "_press-stream-XOZdnXsZ.js",
-      "_Quad-BJDylxEK.js",
-      "_states-h_byhBiI.js",
-      "_axis-CTtQ86SZ.js"
+      "_Card-DIaFJFp4.js",
+      "_press-stream-Bdui_rNf.js",
+      "_AppGrid-Dxp-aGM-.js",
+      "_Quad-BGEu9faY.js",
+      "_states-Qok1NqPy.js",
+      "_axis-DY4SNg7k.js",
+      "_scale-bars-DWjPbk9a.js"
     ],
     "dynamicImports": [
       "src/components/Keyboard3D.tsx"
     ]
   },
+  "src/views/mouse.tsx": {
+    "file": "assets/mouse-rVD7aNxM.js",
+    "name": "mouse",
+    "src": "src/views/mouse.tsx",
+    "isDynamicEntry": true,
+    "imports": [
+      "_degraded-CHoep9Ns.js",
+      "src/main.tsx",
+      "_Card-DIaFJFp4.js",
+      "_Quad-BGEu9faY.js",
+      "_states-Qok1NqPy.js",
+      "_axis-DY4SNg7k.js",
+      "_scale-bars-DWjPbk9a.js"
+    ]
+  },
   "src/views/overview.tsx": {
-    "file": "assets/overview-BIItS5Vm.js",
+    "file": "assets/overview-C9WLVVhR.js",
     "name": "overview",
     "src": "src/views/overview.tsx",
     "isDynamicEntry": true,
     "imports": [
-      "_degraded-e5bpAI9F.js",
+      "_degraded-CHoep9Ns.js",
       "src/main.tsx",
-      "_Card-C4D6OaLH.js",
-      "_states-h_byhBiI.js"
+      "_Card-DIaFJFp4.js",
+      "_states-Qok1NqPy.js"
     ]
   },
   "style.css": {
-    "file": "assets/style-C5O38ug2.css",
+    "file": "assets/style-CmOZ_bsk.css",
     "src": "style.css"
   }
 }
