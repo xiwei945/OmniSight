@@ -7,13 +7,21 @@
 * 沿用：只写 ``HKCU``，不碰 ``HKLM``——不需要管理员权限，也不影响其他用户。
 * 改进：写入时附加 ``--autostart``，用于区分"用户手动启动"与"开机自启"
   （例如开机自启时不弹导入向导）。
+
+**``winreg`` 在函数里才导入**：模块级导入会让本文件在 macOS / Linux 上直接
+``ImportError``，而 :func:`startup_command` 这类纯函数必须能在三个平台上被测
+（11 文档 §1）。``logon_task`` 对 ``autostart`` 的惰性导入是同一条理由。
+
+**自启项写的那条命令行必须自己找得到代码**。``Run`` 项是资源管理器在登录时拉起的，
+工作目录不是仓库、也没有 ``PYTHONPATH``；写一条 ``-m omnisight`` 出去，在没把包装进
+解释器的开发环境里必然 ImportError，而 pythonw 没有控制台——症状就是"开机后什么都没
+发生"。见 :func:`startup_command`。
 """
 
 from __future__ import annotations
 
 import logging
 import sys
-import winreg
 from pathlib import Path
 
 logger = logging.getLogger(__name__)
@@ -22,6 +30,9 @@ RUN_KEY = r"Software\Microsoft\Windows\CurrentVersion\Run"
 VALUE_NAME = "OmniSight"
 AUTOSTART_FLAG = "--autostart"
 
+#: 开发模式下那支会自己搭好 ``sys.path`` 的启动器（仓库根）。打包版里没有它。
+DEV_LAUNCHER_NAME = "run_omnisight.pyw"
+
 #: 属性页「兼容性」里那个"以管理员身份运行此程序"落在这里：值名是 EXE 的完整路径，
 #: 值数据形如 ``~ RUNASADMIN``（多个兼容性层以空格分隔）。用户勾一下就会写进来。
 LAYERS_KEY = r"Software\Microsoft\Windows NT\CurrentVersion\AppCompatFlags\Layers"
@@ -29,6 +40,8 @@ RUNASADMIN_LAYER = "RUNASADMIN"
 
 
 def _layer_tokens(target: str, root: int) -> list[str]:
+    import winreg
+
     try:
         with winreg.OpenKey(root, LAYERS_KEY) as key:
             value, _ = winreg.QueryValueEx(key, target)
@@ -49,6 +62,8 @@ def always_elevated_by_compat_flag(target: Path | None = None) -> bool:
 
     两个位置都要查：``HKCU`` 是用户自己勾的，``HKLM`` 是管理员给全机器设的。
     """
+    import winreg
+
     executable = str(Path(target or sys.executable).resolve())
     for root in (winreg.HKEY_CURRENT_USER, winreg.HKEY_LOCAL_MACHINE):
         if RUNASADMIN_LAYER in _layer_tokens(executable, root):
@@ -56,11 +71,37 @@ def always_elevated_by_compat_flag(target: Path | None = None) -> bool:
     return False
 
 
+def _dev_launcher() -> Path | None:
+    """仓库根那支自己搭 ``sys.path`` 的开发启动器；不在（例如包已装进解释器）返回 ``None``。"""
+    try:
+        from ...core import paths
+    except ImportError:  # pragma: no cover - 解释器里连 omnisight.core 都没有
+        return None
+    candidate = paths.exe_dir() / DEV_LAUNCHER_NAME
+    return candidate if candidate.is_file() else None
+
+
 def startup_command() -> str:
-    """自启项应有的命令行。开发模式指向 ``python -m omnisight``。"""
+    """自启项应有的命令行。
+
+    打包版指向 EXE，开发模式指向仓库里的 :data:`DEV_LAUNCHER_NAME`。
+
+    **开发模式曾经写成 ``-m omnisight``，而它在登录时必然失败**（2026-10-31 实测，
+    症状是"开机自启没生效"）：``Run`` 项由资源管理器拉起，工作目录是系统目录，仓库是
+    src 布局、包又没装进解释器的 ``site-packages``（开发环境只装依赖），于是
+    ``pythonw -m omnisight`` 当场 ``No module named 'omnisight'``；pythonw 没有控制台，
+    这一死完全静默，而 :meth:`RegistryAutostart.is_enabled` 照旧按字符串比对报"已启用"
+    ——用户以为开着，实际每次登录什么都没发生。启动器自己把 ``src``（和 ``.venv``）塞进
+    ``sys.path``，于是这条自启项与"双击桌面那个快捷方式"走同一条路，与工作目录无关。
+
+    包已经 ``pip install -e .`` 进解释器时不需要启动器，退回 ``-m omnisight``。
+    """
     executable = Path(sys.executable).resolve()
     if getattr(sys, "frozen", False):
         return f'"{executable}" {AUTOSTART_FLAG}'
+    launcher = _dev_launcher()
+    if launcher is not None:
+        return f'"{executable}" "{launcher}" {AUTOSTART_FLAG}'
     return f'"{executable}" -m omnisight {AUTOSTART_FLAG}'
 
 
@@ -76,6 +117,8 @@ class RegistryAutostart:
         return self._command
 
     def _read(self) -> str | None:
+        import winreg
+
         try:
             with winreg.OpenKey(winreg.HKEY_CURRENT_USER, RUN_KEY) as key:
                 value, _ = winreg.QueryValueEx(key, self._value_name)
@@ -94,6 +137,8 @@ class RegistryAutostart:
         return self._read() is not None
 
     def set_enabled(self, enabled: bool) -> None:
+        import winreg
+
         if enabled:
             with winreg.CreateKeyEx(
                 winreg.HKEY_CURRENT_USER, RUN_KEY, 0, winreg.KEY_SET_VALUE
