@@ -165,6 +165,8 @@
 .keyboard-replay {
   display: flex;
   align-items: center;
+  /* 加了倍速条之后这一行在窄屏上会放不下：让它换行，而不是把进度条挤成一条缝。 */
+  flex-wrap: wrap;
   gap: var(--space-2);
   margin-top: var(--space-3);
   color: var(--text-secondary);
@@ -204,6 +206,93 @@
 .keyboard-replay__count {
   font-variant-numeric: tabular-nums;
   color: var(--text-tertiary);
+}
+
+/* 倍速条（2026-10-31）。推到行尾，不挤键盘读数那一组。
+   不用 `accent-color` 交给自己画：浏览器默认把轨道画成一整根粗药丸（实测 ~10px、
+   比旁边 6px 的进度条重一圈），在浅色主题里像一条深色的条。这里换成 4px 细槽 +
+   12px 空心拇指，与进度条同一套重量；已过的部分仍用「按键」这条数据的颜色。 */
+.keyboard-replay__rate {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  margin-left: auto;
+  color: var(--text-tertiary);
+}
+.keyboard-replay__rate label { cursor: pointer; }
+.keyboard-replay__rate input[type="range"] {
+  appearance: none;
+  -webkit-appearance: none;
+  width: 104px;
+  height: 16px;              /* 给 12px 的拇指留出上下余量 */
+  margin: 0;
+  background: transparent;
+  cursor: pointer;
+}
+/* 轨道。`--rate` 是 0..1，由组件按当前档位写进来；渐变在它那里硬切一刀。 */
+.keyboard-replay__rate input[type="range"]::-webkit-slider-runnable-track {
+  height: 4px;
+  border-radius: var(--radius-full);
+  background: linear-gradient(
+    to right,
+    var(--data-keys) 0,
+    var(--data-keys) calc(var(--rate, 1) * 100%),
+    var(--control-track) calc(var(--rate, 1) * 100%),
+    var(--control-track) 100%
+  );
+}
+.keyboard-replay__rate input[type="range"]::-webkit-slider-thumb {
+  appearance: none;
+  -webkit-appearance: none;
+  width: 12px;
+  height: 12px;
+  margin-top: -4px;          /* (拇指 12 − 轨道 4) / 2：让拇指压在轨道中间 */
+  border: 2px solid var(--data-keys);
+  border-radius: 50%;
+  background: var(--surface-card);
+}
+.keyboard-replay__rate input[type="range"]::-moz-range-track {
+  height: 4px;
+  border-radius: var(--radius-full);
+  background: var(--control-track);
+}
+.keyboard-replay__rate input[type="range"]::-moz-range-progress {
+  height: 4px;
+  border-radius: var(--radius-full);
+  background: var(--data-keys);
+}
+.keyboard-replay__rate input[type="range"]::-moz-range-thumb {
+  width: 8px;
+  height: 8px;
+  border: 2px solid var(--data-keys);
+  border-radius: 50%;
+  background: var(--surface-card);
+}
+/* 焦点环画在**拇指**上，而不是整个 104×16 的输入框上：套在框上像一个输入框，
+   而这里真正要指出的是"这颗能拖的东西"。base.css 那条全局 `:focus-visible` 也给了
+   输入框一圈 box-shadow，所以这里必须先把它清掉。 */
+.keyboard-replay__rate input[type="range"]:focus-visible {
+  outline: none;
+  box-shadow: none;
+}
+.keyboard-replay__rate input[type="range"]:focus-visible::-webkit-slider-thumb {
+  box-shadow: var(--shadow-focus);
+}
+.keyboard-replay__rate input[type="range"]:focus-visible::-moz-range-thumb {
+  box-shadow: var(--shadow-focus);
+}
+/* 选择器要比上面那条 `.keyboard-replay button` 更具体，否则会被按钮样式盖掉。 */
+.keyboard-replay .keyboard-replay__rate-value {
+  min-width: 38px;  /* `4×` 与 `0.75×` 换档时行不动 */
+  border: 1px solid transparent;
+  background: none;
+  color: var(--text-secondary);
+  font-variant-numeric: tabular-nums;
+}
+.keyboard-replay .keyboard-replay__rate-value:hover {
+  border-color: var(--border-default);
+  background: var(--surface-card);
+  color: var(--text-primary);
 }
 .orphans { margin-top: var(--space-4); }
 .orphans__title { font-size: var(--text-sm); color: var(--text-secondary); margin-bottom: var(--space-2); }

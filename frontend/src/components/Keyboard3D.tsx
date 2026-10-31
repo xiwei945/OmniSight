@@ -18,7 +18,7 @@ import * as THREE from 'three';
 import { GLTFLoader } from 'three/examples/jsm/loaders/GLTFLoader.js';
 import { RoomEnvironment } from 'three/examples/jsm/environments/RoomEnvironment.js';
 import { on as busOn } from '../core/bus.ts';
-import { getReplay, getReplayMeta, subscribe as subscribeReplay } from '../core/replay.ts';
+import { getReplay, getReplayMeta, stop as stopReplay, subscribe as subscribeReplay } from '../core/replay.ts';
 import { p95OfMetric, valueOfMetric } from '../core/replay-counts.ts';
 import { dayIndexAt, PressCursor } from '../core/press-stream.ts';
 import { prefersReducedMotion } from '../core/theme.ts';
@@ -576,10 +576,21 @@ function createKeyboardScene(
       const uy = -(rightEnd.y - projected.y) * 0.5 * height;
       const vx = (downEnd.x - projected.x) * 0.5 * width;
       const vy = -(downEnd.y - projected.y) * 0.5 * height;
-      const span = Math.hypot(ux, uy) || 1;
+      const spanU = Math.hypot(ux, uy) || 1;
+      const spanV = Math.hypot(vx, vy) || 1;
+      // **纵向缩短按毫米归一，不能按横向的像素长度归一。**
+      //
+      // 键面在屏幕上是斜的，所以"朝前"那根基向量本来就短；普通键横竖差不多长，
+      // 除以横向长度刚好等于那个缩短比例（cos 机位倾角），看不出问题。空格是 5 倍宽：
+      // 同一句话除下去，比例就变成 cos/5，数字被压成一条横线——用户 2026-10-31 说的
+      // "空格没有数据，只有横线"就是这个（读数其实在，只是高度只剩 1 像素）。
+      // 这里改成先各自归一成单位向量，再乘回"每毫米像素数"之比，宽键与窄键才一致。
+      const squash = Math.min(1, Math.max(0.05,
+        (spanV * entry.halfWidth) / (Math.max(1e-6, spanU) * Math.max(1e-6, entry.halfDepth)),
+      ));
       entry.labelMatrix =
-        `matrix(${(ux / span).toFixed(4)},${(uy / span).toFixed(4)},` +
-        `${(vx / span).toFixed(4)},${(vy / span).toFixed(4)},0,0)`;
+        `matrix(${(ux / spanU).toFixed(4)},${(uy / spanU).toFixed(4)},` +
+        `${((vx / spanV) * squash).toFixed(4)},${((vy / spanV) * squash).toFixed(4)},0,0)`;
       entry.valueNode.style.transform = entry.labelMatrix;
 
       // 字号跟着键宽走；宽度收到键面以内，免得压到隔壁键。
@@ -603,6 +614,23 @@ function createKeyboardScene(
     applyLook();
     updateLabels();
     layoutLabels();
+  }
+
+  /**
+   * 重读 CSS 里的两条色阶。
+   *
+   * **必须挂在 `theme:changed` 上**：色阶是浏览器算出来的样式，而键帽的
+   * `material.color` 和档位墨色是创建场景时抄下来的字符串。不重读的话，用户在设置里
+   * 把「奶油拿铁」换成「蓝」，图例变了、键帽还是上一套——用户 2026-10-31 报的
+   * "把暖色的跟奶油拿铁的混在一起了"就是这个来源（那条总线以前没有订阅者，
+   * `refreshColors` 定义了却没人调用）。
+   */
+  function refreshTheme(): void {
+    ramp = cssHeatRamp();
+    showRamp = cssShowRamp();
+    showColors = showRamp.map((color) => new THREE.Color(color));
+    showInk = showRamp.map((color) => inkFor(color));
+    if (ready) refresh();
   }
 
   function setData(next: HeatmapResponse | null | undefined, nextMetric: string): void {
@@ -1093,9 +1121,14 @@ function createKeyboardScene(
   });
   // 回放开关：直接订阅模块状态，**不经过 React**——回放进度是 5Hz，让整页跟着重渲染
   // 不值得，而且这条路径和 bus 一样是"绕过渲染"的。
+  //
+  // 场景可能是"回放途中"才建起来的（切 3D/平面、开完展示层回来）。此时本场景手里没有
+  // 任何累计账，接进去只会得到一块全部归零的键盘——用户 2026-10-31 报的"切回来是纯白"。
+  // 所以先把回放收掉，按当前范围的读数重建：状态显示与画面必须说同一件事。
+  const mounted = getReplay();
+  if (mounted.status === 'playing' || mounted.status === 'paused') stopReplay();
   const offReplayChange = subscribeReplay(onReplayState);
-  // 订阅不给"当前值"：场景可能是回放中途才建起来的（切 3D/平面、开完展示层回来），
-  // 那种情况下也要立刻进入/退出计数状态。
+  const offTheme = busOn('theme:changed', refreshTheme);
   onReplayState(getReplay());
 
   const loop = () => {
@@ -1275,19 +1308,14 @@ function createKeyboardScene(
     setData,
     setMode,
     setStream,
-    refreshColors() {
-      ramp = cssHeatRamp();
-      showRamp = cssShowRamp();
-      showColors = showRamp.map((color) => new THREE.Color(color));
-      showInk = showRamp.map((color) => inkFor(color));
-      if (ready) refresh();
-    },
+    refreshColors: refreshTheme,
     dispose() {
       disposed = true;
       cancelAnimationFrame(raf);
       offPress();
       offPressDetail();
       offReplayChange();
+      offTheme();
       observer.disconnect();
       canvas.removeEventListener('pointerup', onCanvasClick);
       canvas.removeEventListener('pointermove', onCanvasMove);
@@ -1303,6 +1331,10 @@ function createKeyboardScene(
         if (Array.isArray(material)) material.forEach((item) => item.dispose());
         else material?.dispose();
       });
+      // `renderer.dispose()` 只释放 three 自己的缓存，**不还 WebGL 上下文**。切一次
+      // 平面↔3D 就多占一个上下文，浏览器上限（通常 16 个）一到就开始丢最老的那个，
+      // 而丢掉的画布就是一块白——用户 2026-10-31 的"切回来是纯白的"。
+      renderer.forceContextLoss();
       renderer.dispose();
       environment.dispose();
       pmrem.dispose();

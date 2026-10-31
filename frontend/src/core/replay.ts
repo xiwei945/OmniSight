@@ -24,6 +24,8 @@ export interface ReplayState {
   total: number;
   /** 已经放出多少次。 */
   done: number;
+  /** 当前倍速（0.5–4）。改它不影响已经放出去的部分，下一帧就按新速率走。 */
+  rate: number;
 }
 
 export interface ReplayEvent {
@@ -58,14 +60,66 @@ const MIN_GAP_MS = 40;
 /** 单帧最多推进多少毫秒。切后台回来时用它把"错过的几个小时"夹掉。 */
 const MAX_FRAME_MS = 100;
 
-let state: ReplayState = { status: 'idle', total: 0, done: 0 };
+/**
+ * 倍速范围与档距。
+ *
+ * **为什么需要它**：`MIN_GAP_MS` 是每颗键的下限，于是这一天的总时长至少是
+ * `(N-1) × 40ms`——一万次按下就是 6.7 分钟，`TARGET_MS` 那个"压到 30 秒"的目标根本
+ * 轮不到它说话（下限赢）。所以"太慢"不是压缩系数算错了，是这条路本身有个地板；
+ * 想更快只能显式地跨过地板，也就是倍速。
+ */
+export const MIN_RATE = 0.5;
+export const MAX_RATE = 4;
+/** 档距。滑条按它吸附，`clampRate` 也按它取整，两者才不会给出对不上的值。 */
+export const RATE_STEP = 0.25;
+
+const RATE_KEY = 'omnisight.replayRate';
+
+/** 夹到 `[MIN_RATE, MAX_RATE]` 并对齐档距。非法值（NaN、localStorage 里被人写坏）回 1。 */
+export function clampRate(value: number): number {
+  if (!Number.isFinite(value)) return 1;
+  const snapped = Math.round(value / RATE_STEP) * RATE_STEP;
+  return Math.min(MAX_RATE, Math.max(MIN_RATE, Number(snapped.toFixed(2))));
+}
+
+/** `1×` / `0.75×`：整数不带小数点，其余去掉末尾的 0。 */
+export function formatRate(rate: number): string {
+  return `${rate.toFixed(2).replace(/\.?0+$/, '')}×`;
+}
+
+/** 倍速跟着这台浏览器走（像主题那样），不进配置：它是**播放方式**，不是一条应用设置。 */
+function readRate(): number {
+  try {
+    if (typeof localStorage === 'undefined') return 1;
+    const raw = localStorage.getItem(RATE_KEY);
+    return raw == null ? 1 : clampRate(Number(raw));
+  } catch {
+    // 隐私模式，或（node 下的单测）没有 localStorage：用默认档。
+    return 1;
+  }
+}
+
+function writeRate(rate: number): void {
+  try {
+    if (typeof localStorage === 'undefined') return;
+    localStorage.setItem(RATE_KEY, String(rate));
+  } catch {
+    // 同上：记不住就记不住，本次会话里仍然是这个速度。
+  }
+}
+
+/** 倍速不随 status 重置，所以它不放在 state 里被各处覆写，而是由 `setState` 统一带上。 */
+let rate = readRate();
+
+let state: ReplayState = { status: 'idle', total: 0, done: 0, rate };
 const listeners = new Set<(value: ReplayState) => void>();
 
 let events: ReplayEvent[] = [];
 /** 每条事件的**虚拟触发时刻**（毫秒），在装载时一次算好。 */
 let schedule: number[] = [];
 let cursor = 0;
-let speed = 1;
+/** 装载时算出的整段缩放系数（`TARGET_MS` 那一档）。与用户可调的 `rate` 无关。 */
+let spanScale = 1;
 let raf = 0;
 /** 这一份回放的账（每键累计 + 色阶分母需要的终值）。`run` 每次开播自增。 */
 let meta: ReplayMeta | null = null;
@@ -84,13 +138,28 @@ function notify(): void {
   for (const listener of [...listeners]) listener(state);
 }
 
-function setState(next: ReplayState): void {
-  state = next;
+/** 调用方只给"这一段变了什么"，倍速由这里统一补上——否则每次改 status 都会把它抹掉。 */
+function setState(next: Omit<ReplayState, 'rate'>): void {
+  state = { ...next, rate };
   notify();
 }
 
 export function getReplay(): ReplayState {
   return state;
+}
+
+/**
+ * 改倍速。**播放中改立刻生效**：`frame()` 每帧读的是当前值，不重建时间轴，
+ * 所以已经放出去的部分不会跳、不会重算，只是从现在开始走得快/慢一点。
+ */
+export function setRate(value: number): number {
+  const next = clampRate(value);
+  if (next === rate) return rate;
+  rate = next;
+  state = { ...state, rate };
+  writeRate(rate);
+  notify();
+  return rate;
 }
 
 /**
@@ -124,11 +193,11 @@ function buildSchedule(list: ReplayEvent[]): void {
   schedule = [];
   if (!list.length) return;
   const span = Math.max(0, list[list.length - 1].t - list[0].t);
-  speed = span > TARGET_MS ? span / TARGET_MS : 1;
+  spanScale = span > TARGET_MS ? span / TARGET_MS : 1;
   let virtual = 0;
   schedule.push(0);
   for (let index = 1; index < list.length; index += 1) {
-    const gap = Math.min(MAX_GAP_MS, Math.max(MIN_GAP_MS, (list[index].t - list[index - 1].t) / speed));
+    const gap = Math.min(MAX_GAP_MS, Math.max(MIN_GAP_MS, (list[index].t - list[index - 1].t) / spanScale));
     virtual += gap;
     schedule.push(virtual);
   }
@@ -137,7 +206,11 @@ function buildSchedule(list: ReplayEvent[]): void {
 function frame(): void {
   if (state.status !== 'playing') return;
   const now = performance.now();
-  elapsed += Math.min(MAX_FRAME_MS, Math.max(0, now - lastFrameAt));
+  // 倍速乘在**虚拟时钟**上，而不是重建时间轴：时间轴是装载时算好的一份相对顺序，
+  // 乘在这里等于把整条轴拉快/拉慢，光标位置与已发出的计数都不用动。
+  // 代价是它同时跨过了 `MIN_GAP_MS`——4× 时每帧会吐出 1.6 颗键，一帧里同亮的键
+  // 看起来就是同时按下的。那正是"我要更快"的含义：用户用顺序可读性换时间。
+  elapsed += Math.min(MAX_FRAME_MS, Math.max(0, now - lastFrameAt)) * rate;
   lastFrameAt = now;
   while (cursor < events.length && schedule[cursor] <= elapsed) {
     const event = events[cursor];

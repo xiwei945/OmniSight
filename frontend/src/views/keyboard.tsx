@@ -265,7 +265,13 @@ export function View() {
                 <Segmented
                   items={SURFACES}
                   active={surface}
-                  onPick={(id) => setSurface(id as Surface)}
+                  onPick={(id) => {
+                    // 换渲染方式会重建 3D 场景，而回放的累计账是活在场景里的——新场景
+                    // 带不走它，接上去只会是一块归零的键盘。先收掉回放，画面与读数一起
+                    // 回到"当前范围的正常值"（用户 2026-10-31）。
+                    stopReplay();
+                    setSurface(id as Surface);
+                  }}
                   small
                   label="键盘渲染方式"
                 />
