@@ -7,9 +7,9 @@ OmniSight 全局读取键盘输入，杀软把它标为可疑是合理的启发�
 以及怎么处理，见 [faq.md 的杀软一节](faq.md)。这份记录不试图说服你它无害，
 只提供可核对的事实。
 
-- 程序版本：`0.1.0-alpha.1`
-- 记录时间：2026-09-03T02:38:37+08:00
-- 生成环境：Python 3.12.13 / win32
+- 程序版本：`0.1.0-alpha.4`
+- 记录时间：2026-10-31T20:58:56+08:00
+- 生成环境：Python 3.12.5 / win32
 
 ## 产物与校验值
 
@@ -18,9 +18,9 @@ OmniSight 全局读取键盘输入，杀软把它标为可疑是合理的启发�
 
 | 文件 | 角色 | 大小 | SHA-256 |
 | --- | --- | --- | --- |
-| `OmniSight.exe` | 两件发布物内含的可执行文件 | 24.6 MB | `635e720dcf7a3769f91af21fc29e682764b414d2ddce0ca0a5903f6a36182561` |
-| `OmniSight-portable.zip` | 发布物 | 24.4 MB | `ae4c3216aa45f6f3bd512f1210fe22967c7621158d5673f810a9183ee9f002a8` |
-| `OmniSight-Setup.exe` | 发布物 | 26.3 MB | `84bc9247f07c86f0eb72e69744e80d22d0e0e71389c4152cae4d510ecab5fc1a` |
+| `OmniSight.exe` | 两件发布物内含的可执行文件 | 27.7 MB | `c55381be3f2b0b39b8a68649948de9c0ee1d635b5ab9d2fe663942cf74894022` |
+| `OmniSight-portable.zip` | 发布物 | 27.2 MB | `6233bbeb3f3989931c1fa270972816c9a37a4cd7a4b1389cc7e50a1fb99f2e69` |
+| `OmniSight-Setup.exe` | 发布物 | 28.8 MB | `896f7e569820e1def5f11d633f3dc610c09ecdab1e85c94ae0eb82eb2bf40d7e` |
 
 下载后自己算一遍，与上表比对：
 
@@ -31,13 +31,13 @@ Get-FileHash .\OmniSight-Setup.exe -Algorithm SHA256
 
 ## 本机杀软扫描
 
-引擎：Windows Defender（引擎平台版本 4.18.26080.3-0）
+引擎：Windows Defender（引擎平台版本 4.18.26070.9-0）
 
 | 文件 | 结果 | 说明 |
 | --- | --- | --- |
-| `OmniSight.exe` | 未执行（引擎不可用） | [Failed][0x80004005] 未指定的错误 |
-| `OmniSight-portable.zip` | 未执行（引擎不可用） | [Failed][0x80004005] 未指定的错误 |
-| `OmniSight-Setup.exe` | 未执行（引擎不可用） | [Failed][0x80004005] 未指定的错误 |
+| `OmniSight.exe` | 未报警 | no threats |
+| `OmniSight-portable.zip` | 未报警 | no threats |
+| `OmniSight-Setup.exe` | 未报警 | no threats |
 
 复现命令（`<MpCmdRun>` 在 `%ProgramData%\Microsoft\Windows Defender\Platform\<版本>\` 下）：
 
@@ -56,9 +56,9 @@ Get-FileHash .\OmniSight-Setup.exe -Algorithm SHA256
 
 按 SHA-256 查询（**查询不上传文件**，用的是上表里本地算出的哈希）：
 
-- `OmniSight.exe` → <https://www.virustotal.com/gui/file/635e720dcf7a3769f91af21fc29e682764b414d2ddce0ca0a5903f6a36182561>
-- `OmniSight-portable.zip` → <https://www.virustotal.com/gui/file/ae4c3216aa45f6f3bd512f1210fe22967c7621158d5673f810a9183ee9f002a8>
-- `OmniSight-Setup.exe` → <https://www.virustotal.com/gui/file/84bc9247f07c86f0eb72e69744e80d22d0e0e71389c4152cae4d510ecab5fc1a>
+- `OmniSight.exe` → <https://www.virustotal.com/gui/file/c55381be3f2b0b39b8a68649948de9c0ee1d635b5ab9d2fe663942cf74894022>
+- `OmniSight-portable.zip` → <https://www.virustotal.com/gui/file/6233bbeb3f3989931c1fa270972816c9a37a4cd7a4b1389cc7e50a1fb99f2e69>
+- `OmniSight-Setup.exe` → <https://www.virustotal.com/gui/file/896f7e569820e1def5f11d633f3dc610c09ecdab1e85c94ae0eb82eb2bf40d7e>
 
 提交样本是人工步骤：上传到 VirusTotal 等于公开发布这个文件，此后任何人都能按
 哈希取走样本，因此这个决定由维护者本人做，构建脚本不代劳。首次发布时上面的
