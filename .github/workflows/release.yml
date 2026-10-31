@@ -53,7 +53,22 @@ jobs:
       # check_bundle --check 都在本地跑，见 10 文档 §11.1 那张表）。留下的这一道不是
       # 测试而是**分发义务**：许可清单是提交进版本库的快照（`tools/licenses.py` 读它，
       # 不读 node_modules），快照过期意味着发出去的 THIRD_PARTY_NOTICES.md 少列或错列
-      # 依赖。它只比对两个文件，不到一秒。
+      # 依赖。
+      #
+      # 但**校验快照本身要 node_modules**：`npm_licenses.py --check` 是"现采一遍再与
+      # 快照比对"，不是纯文本 diff（见 tools/npm_licenses.py:main）。本 job 原来只
+      # `pip install`，于是它一上来就 MissingModules 退 1——预检必红，后面的构建与发布
+      # 全部 skipped。2026-10-31 发 v0.1.0-alpha.3 时踩到的就是这条。所以这里补齐
+      # Node 与依赖，代价是预检多一次 `pnpm install`（有缓存，约半分钟）。
+      - uses: pnpm/action-setup@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: pnpm
+
+      - run: pnpm install --frozen-lockfile
+
       - run: python tools/npm_licenses.py --check
 
   # ── Windows 构建：便携 zip + 安装包 ────────────────────────────────────
