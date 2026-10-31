@@ -26,6 +26,7 @@ const LABELS: Record<string, string> = {
   'ui.default_view': '默认周期',
   'ui.keyboard_layout': '键盘布局',
   'ui.week_starts_on': '周起始日',
+  'ui.showcase_id': '展示署名（ID）',
   'ui.timezone': '时区',
   'ui.locale': '语言',
   'ui.shell': '外壳',
@@ -76,6 +77,7 @@ const HINTS: Record<string, string> = {
   'privacy.record_window_titles': '标题是最敏感的一档数据，默认关闭。接口默认也不下发',
   'privacy.realtime_stream': '关闭后键盘视图没有实时按压动画，改为 30 秒轮询',
   'ui.heat': '键盘热力图与日历格子的色阶。写入配置，因此换浏览器也一致',
+  'ui.showcase_id': '只出现在全屏「时间流逝」的右上角；留空则整行不显示',
 };
 
 export function labelOf(key: string): string {

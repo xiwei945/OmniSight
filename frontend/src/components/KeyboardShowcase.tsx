@@ -11,6 +11,7 @@ import { lazy, Suspense, useEffect, useMemo, useState } from 'react';
 import { createPortal } from 'react-dom';
 import { get } from '../core/api.ts';
 import { decodePressStream } from '../core/press-stream.ts';
+import { useSlice } from '../core/useStore.ts';
 import { Segmented } from './controls.tsx';
 import { formatCount } from '../domain/format.ts';
 import type { PressStreamData } from '../core/press-stream.ts';
@@ -38,6 +39,9 @@ function dateLabel(iso: string): string {
 }
 
 export function KeyboardShowcase({ onClose }: { onClose: () => void }) {
+  const prefs = useSlice('prefs');
+  // 右上角署名（`ui.showcase_id`）。**默认没有**：没填就整行不渲染，不留空占位。
+  const identity = (prefs.showcaseId || '').trim();
   const [status, setStatus] = useState<Status>('loading');
   const [data, setData] = useState<PressStreamData | null>(null);
   const [note, setNote] = useState('');
@@ -125,6 +129,18 @@ export function KeyboardShowcase({ onClose }: { onClose: () => void }) {
 
   return createPortal(
     <div className="showcase" role="dialog" aria-modal="true" aria-label="键盘时间流逝">
+      <div className="showcase__top">
+        <header className="showcase__hud">
+          <div className="showcase__date">{dateLabel(date)}</div>
+          <div className="showcase__day">第 {day} 天</div>
+          <div className="showcase__total">{formatCount(tick?.total ?? 0)}</div>
+        </header>
+        <aside className="showcase__aside">
+          <div className="showcase__caption">个人日常键盘使用频次数据可视化</div>
+          {identity ? <div className="showcase__id">{identity}</div> : null}
+        </aside>
+      </div>
+
       <div className="showcase__stage">
         {status === 'ready' && source ? (
           <Suspense fallback={null}>
@@ -149,14 +165,6 @@ export function KeyboardShowcase({ onClose }: { onClose: () => void }) {
           </div>
         ) : null}
       </div>
-
-      <header className="showcase__hud">
-        <div className="showcase__date">{dateLabel(date)}</div>
-        <div className="showcase__day">第 {day} 天</div>
-        <div className="showcase__total">{formatCount(tick?.total ?? 0)}</div>
-      </header>
-
-      <div className="showcase__caption">个人日常键盘使用频次数据可视化</div>
 
       {status === 'ready' && data ? (
         <footer className="showcase__bar">

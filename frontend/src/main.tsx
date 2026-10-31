@@ -209,6 +209,8 @@ async function loadPrefs(): Promise<boolean> {
       keyboardLayout: String(valueOf(settings, 'ui.keyboard_layout', 'auto')),
       titlesRecorded: Boolean(valueOf(settings, 'privacy.record_window_titles', false)),
       settingsSurface: String(valueOf(settings, 'ui.settings_surface', 'drawer')),
+      // 空串而不是 "null"：展示层只要判断真值，不必知道后端用 null 表示"没填"。
+      showcaseId: String(valueOf(settings, 'ui.showcase_id', '') ?? ''),
     });
     const theme = String(valueOf(settings, 'ui.theme', 'system'));
     // 静态导入。原先这里 `await import('./core/theme.ts')`，而同一个模块在文件顶部

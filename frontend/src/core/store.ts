@@ -45,6 +45,8 @@ export interface Prefs {
   titlesRecorded: boolean;
   /** 点 ⚙ 是开抽屉还是跳到 `/settings`（`ui.settings_surface`，18 文档 §2.1）。 */
   settingsSurface: string;
+  /** 「时间流逝」展示层的署名（`ui.showcase_id`）。空串 = 不显示。 */
+  showcaseId: string;
 }
 
 /** 实时状态。`mode` 是 stream / polling / offline 三者之一。 */
@@ -101,6 +103,7 @@ const state: State = {
     keyboardLayout: 'auto',
     titlesRecorded: false,
     settingsSurface: 'drawer',
+    showcaseId: '',
   },
   settings: null,
   status: null,

@@ -1,109 +1,109 @@
 {
-  "_AboutContent-BOQe6BTa.js": {
-    "file": "assets/AboutContent-BOQe6BTa.js",
+  "_AboutContent-BUcLV1cA.js": {
+    "file": "assets/AboutContent-BUcLV1cA.js",
     "name": "AboutContent",
     "imports": [
-      "_degraded-D-Qb_yYX.js"
+      "_degraded-kEO3Hn2f.js"
     ]
   },
-  "_Card-BoOGleQ4.js": {
-    "file": "assets/Card-BoOGleQ4.js",
+  "_Card-BQDR_isB.js": {
+    "file": "assets/Card-BQDR_isB.js",
     "name": "Card",
     "imports": [
-      "_degraded-D-Qb_yYX.js"
+      "_degraded-kEO3Hn2f.js"
     ]
   },
-  "_Quad-DxNDHVf4.js": {
-    "file": "assets/Quad-DxNDHVf4.js",
+  "_Quad-DcZfzaci.js": {
+    "file": "assets/Quad-DcZfzaci.js",
     "name": "Quad",
     "imports": [
-      "_degraded-D-Qb_yYX.js",
-      "_controls-BGbwjjbV.js"
+      "_degraded-kEO3Hn2f.js",
+      "_controls-BQOomZTI.js"
     ]
   },
-  "_SettingsPage-Do3qg-oN.js": {
-    "file": "assets/SettingsPage-Do3qg-oN.js",
+  "_SettingsPage-JUQVxjGA.js": {
+    "file": "assets/SettingsPage-JUQVxjGA.js",
     "name": "SettingsPage",
     "imports": [
-      "_degraded-D-Qb_yYX.js",
-      "_shell-_hDMmE4R.js",
-      "_controls-BGbwjjbV.js",
-      "_Card-BoOGleQ4.js"
+      "_degraded-kEO3Hn2f.js",
+      "_shell-D8sMQ96s.js",
+      "_controls-BQOomZTI.js",
+      "_Card-BQDR_isB.js"
     ]
   },
-  "_axis-CgtgOERy.js": {
-    "file": "assets/axis-CgtgOERy.js",
+  "_axis-C_UuIkRT.js": {
+    "file": "assets/axis-C_UuIkRT.js",
     "name": "axis",
     "imports": [
-      "_degraded-D-Qb_yYX.js"
+      "_degraded-kEO3Hn2f.js"
     ]
   },
-  "_controls-BGbwjjbV.js": {
-    "file": "assets/controls-BGbwjjbV.js",
+  "_controls-BQOomZTI.js": {
+    "file": "assets/controls-BQOomZTI.js",
     "name": "controls",
     "imports": [
-      "_degraded-D-Qb_yYX.js",
-      "_shell-_hDMmE4R.js"
+      "_degraded-kEO3Hn2f.js",
+      "_shell-D8sMQ96s.js"
     ]
   },
-  "_degraded-D-Qb_yYX.js": {
-    "file": "assets/degraded-D-Qb_yYX.js",
+  "_degraded-kEO3Hn2f.js": {
+    "file": "assets/degraded-kEO3Hn2f.js",
     "name": "degraded"
   },
-  "_press-stream-DvggXX9l.js": {
-    "file": "assets/press-stream-DvggXX9l.js",
+  "_press-stream-MfilPHvq.js": {
+    "file": "assets/press-stream-MfilPHvq.js",
     "name": "press-stream",
     "imports": [
-      "_degraded-D-Qb_yYX.js"
+      "_degraded-kEO3Hn2f.js"
     ]
   },
-  "_shell-_hDMmE4R.js": {
-    "file": "assets/shell-_hDMmE4R.js",
+  "_shell-D8sMQ96s.js": {
+    "file": "assets/shell-D8sMQ96s.js",
     "name": "shell",
     "imports": [
-      "_degraded-D-Qb_yYX.js"
+      "_degraded-kEO3Hn2f.js"
     ]
   },
-  "_states-CUOSGO-0.js": {
-    "file": "assets/states-CUOSGO-0.js",
+  "_states-BABgAgqn.js": {
+    "file": "assets/states-BABgAgqn.js",
     "name": "states",
     "imports": [
-      "_degraded-D-Qb_yYX.js"
+      "_degraded-kEO3Hn2f.js"
     ]
   },
   "src/about.tsx": {
-    "file": "assets/about-D3cjNklg.js",
+    "file": "assets/about-AK_VdmKm.js",
     "name": "about",
     "src": "src/about.tsx",
     "isEntry": true,
     "imports": [
-      "_degraded-D-Qb_yYX.js",
-      "_shell-_hDMmE4R.js",
-      "_AboutContent-BOQe6BTa.js",
-      "_Card-BoOGleQ4.js"
+      "_degraded-kEO3Hn2f.js",
+      "_shell-D8sMQ96s.js",
+      "_AboutContent-BUcLV1cA.js",
+      "_Card-BQDR_isB.js"
     ]
   },
   "src/components/Keyboard3D.tsx": {
-    "file": "assets/Keyboard3D-Cz7yS0HE.js",
+    "file": "assets/Keyboard3D-EbAUt4zn.js",
     "name": "Keyboard3D",
     "src": "src/components/Keyboard3D.tsx",
     "isDynamicEntry": true,
     "imports": [
-      "_degraded-D-Qb_yYX.js",
+      "_degraded-kEO3Hn2f.js",
       "src/main.tsx",
-      "_press-stream-DvggXX9l.js"
+      "_press-stream-MfilPHvq.js"
     ]
   },
   "src/main.tsx": {
-    "file": "assets/main-Cg5DMfn_.js",
+    "file": "assets/main-CQUagMb-.js",
     "name": "main",
     "src": "src/main.tsx",
     "isEntry": true,
     "imports": [
-      "_degraded-D-Qb_yYX.js",
-      "_shell-_hDMmE4R.js",
-      "_controls-BGbwjjbV.js",
-      "_AboutContent-BOQe6BTa.js"
+      "_degraded-kEO3Hn2f.js",
+      "_shell-D8sMQ96s.js",
+      "_controls-BQOomZTI.js",
+      "_AboutContent-BUcLV1cA.js"
     ],
     "dynamicImports": [
       "src/components/Keyboard3D.tsx",
@@ -115,87 +115,87 @@
     ]
   },
   "src/pages/SettingsDrawer.tsx": {
-    "file": "assets/SettingsDrawer-Bei9otI7.js",
+    "file": "assets/SettingsDrawer-QZ2y4QwW.js",
     "name": "SettingsDrawer",
     "src": "src/pages/SettingsDrawer.tsx",
     "isDynamicEntry": true,
     "imports": [
-      "_degraded-D-Qb_yYX.js",
-      "_shell-_hDMmE4R.js",
-      "_SettingsPage-Do3qg-oN.js"
+      "_degraded-kEO3Hn2f.js",
+      "_shell-D8sMQ96s.js",
+      "_SettingsPage-JUQVxjGA.js"
     ]
   },
   "src/settings.tsx": {
-    "file": "assets/settings-DYvRK7fb.js",
+    "file": "assets/settings-C9x2vRGH.js",
     "name": "settings",
     "src": "src/settings.tsx",
     "isEntry": true,
     "imports": [
-      "_degraded-D-Qb_yYX.js",
-      "_shell-_hDMmE4R.js",
-      "_SettingsPage-Do3qg-oN.js"
+      "_degraded-kEO3Hn2f.js",
+      "_shell-D8sMQ96s.js",
+      "_SettingsPage-JUQVxjGA.js"
     ]
   },
   "src/views/apps.tsx": {
-    "file": "assets/apps-z_35zd8D.js",
+    "file": "assets/apps-CAhjIrF9.js",
     "name": "apps",
     "src": "src/views/apps.tsx",
     "isDynamicEntry": true,
     "imports": [
-      "_degraded-D-Qb_yYX.js",
-      "_controls-BGbwjjbV.js",
+      "_degraded-kEO3Hn2f.js",
+      "_controls-BQOomZTI.js",
       "src/main.tsx",
-      "_Card-BoOGleQ4.js",
-      "_Quad-DxNDHVf4.js",
-      "_states-CUOSGO-0.js"
+      "_Card-BQDR_isB.js",
+      "_Quad-DcZfzaci.js",
+      "_states-BABgAgqn.js"
     ]
   },
   "src/views/insights.tsx": {
-    "file": "assets/insights-KmWm6chD.js",
+    "file": "assets/insights-B44Sj3Ud.js",
     "name": "insights",
     "src": "src/views/insights.tsx",
     "isDynamicEntry": true,
     "imports": [
-      "_degraded-D-Qb_yYX.js",
+      "_degraded-kEO3Hn2f.js",
       "src/main.tsx",
-      "_Card-BoOGleQ4.js",
-      "_states-CUOSGO-0.js",
-      "_axis-CgtgOERy.js"
+      "_Card-BQDR_isB.js",
+      "_states-BABgAgqn.js",
+      "_axis-C_UuIkRT.js"
     ]
   },
   "src/views/keyboard.tsx": {
-    "file": "assets/keyboard-CFP5mBVK.js",
+    "file": "assets/keyboard-CkVDmFn0.js",
     "name": "keyboard",
     "src": "src/views/keyboard.tsx",
     "isDynamicEntry": true,
     "imports": [
-      "_degraded-D-Qb_yYX.js",
-      "_controls-BGbwjjbV.js",
+      "_degraded-kEO3Hn2f.js",
+      "_controls-BQOomZTI.js",
       "src/main.tsx",
-      "_Card-BoOGleQ4.js",
-      "_press-stream-DvggXX9l.js",
-      "_Quad-DxNDHVf4.js",
-      "_states-CUOSGO-0.js",
-      "_axis-CgtgOERy.js"
+      "_Card-BQDR_isB.js",
+      "_press-stream-MfilPHvq.js",
+      "_Quad-DcZfzaci.js",
+      "_states-BABgAgqn.js",
+      "_axis-C_UuIkRT.js"
     ],
     "dynamicImports": [
       "src/components/Keyboard3D.tsx"
     ]
   },
   "src/views/overview.tsx": {
-    "file": "assets/overview-DJeDGtXc.js",
+    "file": "assets/overview-B65wYdOJ.js",
     "name": "overview",
     "src": "src/views/overview.tsx",
     "isDynamicEntry": true,
     "imports": [
-      "_degraded-D-Qb_yYX.js",
+      "_degraded-kEO3Hn2f.js",
       "src/main.tsx",
-      "_Card-BoOGleQ4.js",
-      "_states-CUOSGO-0.js"
+      "_Card-BQDR_isB.js",
+      "_states-BABgAgqn.js"
     ]
   },
   "style.css": {
-    "file": "assets/style-CjLLHISq.css",
+    "file": "assets/style-C5O38ug2.css",
     "src": "style.css"
   }
 }

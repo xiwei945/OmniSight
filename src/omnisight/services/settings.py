@@ -167,6 +167,13 @@ SPECS: tuple[SettingSpec, ...] = (
     ),
     SettingSpec("ui.week_starts_on", "int", HOT, minimum=0, maximum=6),
     SettingSpec(
+        "ui.showcase_id",
+        "string",
+        HOT,
+        nullable=True,
+        note="显示在「时间流逝」展示层右上角的署名；留空就不显示",
+    ),
+    SettingSpec(
         "privacy.record_window_titles",
         "bool",
         RESTART,

@@ -108,6 +108,10 @@ class UiConfig:
     #: 05 文档 §1.2 要求"周"统一为自然周且起始日可配置，§9 的示例直接引用了
     #: ``settings.ui.week_starts_on``——M2 落地周期计算时才需要它，故此时补上。
     week_starts_on: int = 0
+    #: 「时间流逝」展示层右上角的署名（ID / 昵称）。
+    #: **不是账号体系**：只是一行想在截图里被看见的落款，所以默认没有、留空就不显示。
+    #: 上限 40 字：再长就会把右上角那行撑到舞台外面去。
+    showcase_id: str | None = None
 
 
 @dataclass(frozen=True, slots=True)
@@ -303,6 +307,12 @@ def validate(cfg: Config) -> Config:
         0 <= week_start <= 6,
         "`ui.week_starts_on` 必须在 0–6 之间（0 = 周一）",
         "ui.week_starts_on",
+    )
+    showcase_id = cfg.ui.showcase_id
+    _require(
+        showcase_id is None or (isinstance(showcase_id, str) and len(showcase_id) <= 40),
+        "`ui.showcase_id` 必须是不超过 40 字的字符串，或 null（不显示）",
+        "ui.showcase_id",
     )
     if cfg.ui.timezone is not None:
         # 时区名写错会让所有日期桶归错日，且事后无法从数据里看出来——必须启动即拒。

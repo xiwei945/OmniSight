@@ -4,6 +4,10 @@
  * 从顶部的暖白往外压暗的径向光，让键帽浮在这层光上。深色主题沿用同一结构，只是把
  * 暖白换成暖褐——不做一套"白底舞台"，否则深色主题下打开会像闪光弹。
  *
+ * **布局是网格，不是绝对定位**：日期/总数那一块必须在键盘**上方**占住自己的行。
+ * 早先它 absolute 压在画布上，后几排键帽的数字就被大字盖住了（参考视频里大字在
+ * 键帽之外的空处，所以不会挡）。网格保证任何宽高比下两者都不重叠。
+ *
  * 大字三行（日期 / 第 N 天 / 总数）是这块界面的主视觉：字号用 clamp 跟着视口走，
  * 数字一律 tabular-nums，滚动时不会左右抖。
  */
@@ -11,8 +15,13 @@
   position: fixed;
   inset: 0;
   z-index: 80;
-  display: flex;
-  flex-direction: column;
+  display: grid;
+  grid-template-rows: auto minmax(0, 1fr) auto;
+  gap: clamp(4px, 1.2vh, 16px);
+  padding:
+    clamp(16px, 3.6vh, 44px)
+    clamp(20px, 4vw, 64px)
+    clamp(10px, 2vh, 22px);
   overflow: hidden;
   color: var(--text-primary);
   background:
@@ -33,22 +42,90 @@
   }
 }
 
-/* 四周压一层极淡的暗角，画面边缘不"飘"。 */
+/* 四周压一层极淡的暗角，画面边缘不"飘"。放在内容下面：底栏与大字不该被它压暗。 */
 .showcase::after {
   content: "";
   position: absolute;
   inset: 0;
+  z-index: 0;
   pointer-events: none;
   background: radial-gradient(115% 95% at 50% 45%, transparent 55%, rgba(60, 42, 26, .1) 100%);
 }
+.showcase > * {
+  position: relative;
+  z-index: 1;
+}
 
+/* ── 顶部：大字在左，说明与署名在右 ──────────────────────────────────── */
+.showcase__top {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: var(--space-6);
+  min-width: 0;
+  pointer-events: none;
+}
+
+.showcase__hud { min-width: 0; }
+
+.showcase__date {
+  font-size: clamp(13px, 1.15vw, 18px);
+  letter-spacing: .2em;
+  color: var(--text-secondary);
+  font-variant-numeric: tabular-nums;
+}
+
+.showcase__day {
+  margin-top: 5px;
+  font-size: clamp(11px, .9vw, 13px);
+  letter-spacing: .38em;
+  color: var(--text-tertiary);
+}
+
+.showcase__total {
+  margin-top: clamp(2px, .8vh, 10px);
+  font-size: clamp(36px, 5.4vw, 74px);
+  font-weight: 200;
+  line-height: 1;
+  letter-spacing: -.025em;
+  color: var(--text-primary);
+  font-variant-numeric: tabular-nums;
+}
+
+.showcase__aside {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-end;
+  gap: 10px;
+  text-align: right;
+  min-width: 0;
+}
+
+.showcase__caption {
+  font-size: clamp(11px, .92vw, 13px);
+  letter-spacing: .12em;
+  color: var(--text-tertiary);
+}
+
+/* 署名（`ui.showcase_id`）。没填时这一行根本不渲染，不留空位。 */
+.showcase__id {
+  max-width: 38vw;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: clamp(14px, 1.15vw, 18px);
+  letter-spacing: .1em;
+  font-weight: var(--weight-medium);
+  color: var(--text-secondary);
+}
+
+/* ── 舞台 ────────────────────────────────────────────────────────────── */
 .showcase__stage {
   position: relative;
-  flex: 1 1 auto;
   min-height: 0;
 }
 
-/* 展示层里的画布铺满整块舞台：去掉卡片的圆角/边框/下沉底，只剩键帽。 */
+/* 展示层里的画布铺满这块舞台：去掉卡片的圆角/边框/下沉底，只剩键帽。 */
 .showcase__stage .keyboard-3d {
   height: 100%;
   border: 0;
@@ -68,59 +145,14 @@
   color: var(--text-secondary);
 }
 
-/* ── 三行大字 ────────────────────────────────────────────────────────── */
-.showcase__hud {
-  position: absolute;
-  top: clamp(20px, 5vh, 56px);
-  left: clamp(20px, 5vw, 84px);
-  pointer-events: none;
-}
-
-.showcase__date {
-  font-size: clamp(14px, 1.25vw, 19px);
-  letter-spacing: .2em;
-  color: var(--text-secondary);
-  font-variant-numeric: tabular-nums;
-}
-
-.showcase__day {
-  margin-top: 6px;
-  font-size: clamp(11px, .95vw, 14px);
-  letter-spacing: .38em;
-  color: var(--text-tertiary);
-}
-
-.showcase__total {
-  margin-top: clamp(6px, 1vh, 14px);
-  font-size: clamp(40px, 6.2vw, 86px);
-  font-weight: 200;
-  line-height: 1;
-  letter-spacing: -.025em;
-  color: var(--text-primary);
-  font-variant-numeric: tabular-nums;
-}
-
-.showcase__caption {
-  position: absolute;
-  top: clamp(22px, 5.4vh, 60px);
-  right: clamp(20px, 5vw, 84px);
-  font-size: clamp(11px, .95vw, 13px);
-  letter-spacing: .12em;
-  color: var(--text-tertiary);
-  pointer-events: none;
-}
-
 /* ── 底部控制条 ──────────────────────────────────────────────────────── */
 .showcase__bar {
-  position: absolute;
-  left: 50%;
-  bottom: clamp(14px, 3vh, 30px);
-  transform: translateX(-50%);
+  justify-self: center;
   display: flex;
   align-items: center;
   gap: var(--space-3);
-  max-width: calc(100vw - 32px);
-  padding: 9px 14px;
+  max-width: 100%;
+  padding: 8px 14px;
   border-radius: var(--radius-full);
   border: 1px solid var(--border-subtle);
   background: color-mix(in srgb, var(--surface-card) 78%, transparent);
@@ -151,7 +183,7 @@
   position: relative;
   flex: 1 1 auto;
   min-width: 140px;
-  width: clamp(160px, 26vw, 380px);
+  width: clamp(160px, 24vw, 360px);
   height: 6px;
   padding: 0;
   border: 0;
@@ -182,7 +214,8 @@
 }
 
 @media (max-width: 720px) {
-  .showcase__caption { display: none; }
+  .showcase__top { flex-wrap: wrap; }
+  .showcase__caption,
   .showcase__range { display: none; }
   .showcase__bar { flex-wrap: wrap; justify-content: center; border-radius: var(--radius-lg); }
 }
