@@ -42,6 +42,12 @@ const PRESS_MS = 170;
 /** 下沉深度（模型单位 = 米）。键帽本身高 4mm，沉 1.6mm 是明显的 40%。 */
 const PRESS_DEPTH = 0.0016;
 
+/**
+ * 按压时叠的那层光。**接近白**而不是色阶里的沙色：热力档最暖的几档本身就是沙/橙，
+ * 沙上加沙等于没有反馈。「日常」那套彩色键帽上，只有提亮（而不是换色）才读得出来。
+ */
+const PRESS_GLOW = '#ffe9c8';
+
 /** 时间流逝：数据时间的推进速率（每 1 秒真实时间推进多少毫秒数据）。 */
 export interface KeyboardStreamSource {
   data: PressStreamData;
@@ -63,6 +69,15 @@ export interface StreamTick {
 
 /** 时间流逝的刷新节拍：键面数字与颜色不需要 60fps，15Hz 肉眼就是连续的。 */
 const STREAM_REFRESH_MS = 66;
+
+/**
+ * 空档跳过的门槛（真实毫秒）：下一颗键要等的时间超过它，就把时钟直接推过去。
+ *
+ * 0.14 秒是"画面明显停了一下"的那个量级——低于它，等与不等看不出区别；高于它，
+ * 停着的那段只会被读成卡住。读数本身还有 66ms 的刷新节拍，所以这个值必须比一节拍
+ * 大一点点、又不能大到让人等，取 140ms。见 `skipGap`。
+ */
+const GAP_SKIP_WALL_MS = 140;
 
 
 /** 固定视角：略高的 3/4 俯视，右侧稍近。界面不提供改它的入口。 */
@@ -252,8 +267,6 @@ function createKeyboardScene(
 
   const raycaster = new THREE.Raycaster();
   const pointer = new THREE.Vector2();
-  const UP = new THREE.Vector3(0, 1, 0);
-  const swayDirection = new THREE.Vector3();
   /** 投影用的临时向量。`placeLabels` 每帧 104 次，不在这里 new。 */
   const scratch = new THREE.Vector3();
 
@@ -299,8 +312,6 @@ function createKeyboardScene(
   let streamLastFrame = 0;
   let streamLastRefresh = 0;
   let streamEnded = false;
-  /** 时间流逝时相机绕 Y 的绝对角度（累加，切暂停不重置）。 */
-  let streamAngle = 0;
   /** key_id → 按键流里的下标。 */
   let streamIndex = new Map<string, number>();
 
@@ -384,8 +395,24 @@ function createKeyboardScene(
     }
   }
 
+  /**
+   * 按压/水波结束后，把发光还原成这一档该有的样子。
+   *
+   * 「展示」是按档位常亮的暖光，「日常」本来不发光（颜色已经表达了读数）。按压动画会
+   * 临时盖掉 emissive，收尾时**必须还原**，否则放完一轮回放，整块键盘会留在"被点亮"
+   * 的状态上——那正是用户说的"在已有颜色的键盘上改颜色"。
+   */
+  function glowBack(entry: KeyEntry): void {
+    if (mode === 'showcase' && !stream) {
+      entry.material.emissive.set('#ffb271');
+      entry.material.emissiveIntensity = entry.level === 0 ? 0 : 0.03 + entry.level * 0.085;
+    } else {
+      entry.material.emissive.setRGB(0, 0, 0);
+      entry.material.emissiveIntensity = 0;
+    }
+  }
+
   function updateLabels(): void {
-    // 时间流逝自己写数字（全键、千分位），不走"热力读数"那一套。
     if (stream) return;
     for (const [keyId, entry] of keys) {
       // 每颗键都印读数。主次不是靠"少印几个"拉开的，而是靠**键面字符的大小**：
@@ -400,13 +427,14 @@ function createKeyboardScene(
   /**
    * 只摆位置：把键帽中心投影到画布坐标，写 transform。
    *
-   * 与 `layoutLabels` 分开是因为**相机在时间流逝里一直在动**：每帧重算字号要走
+   * 与 `layoutLabels` 分开是因为**相机随时可能变**：每帧重算字号要走
    * `offsetWidth`（强制回流），104 个键一次就要几毫秒；位置只需要一次投影矩阵乘法。
    * 字号沿用上一次布局算好的 `widthPx/offsetPx`。
    *
-   * **半像素去重**：这条路径每帧都跑，而镜头环绕慢到多数帧的位移不足半像素。位移不到
-   * 半像素就不写 DOM——写一次 CSS 变换要走样式重算 + 合成层更新，104 个键乘 60fps
-   * 是这笔账里最容易漏掉的一项（见 2026-10-31 的帧剖析：`placeLabels` 是 JS 侧第一）。
+   * **半像素去重**：这条路径每帧都跑，而镜头一旦不动，位移就是 0。位移不到半像素就不写
+   * DOM——写一次 CSS 变换要走样式重算 + 合成层更新，104 个键乘 60fps 是这笔账里最容易
+   * 漏掉的一项（见 2026-10-31 的帧剖析：`placeLabels` 曾是 JS 侧第一）。镜头现在固定，
+   * 于是这一句基本就是"整段跳过"。
    * `force` 用在必须对齐的时刻：首次布局、尺寸变化、seek 之后。
    */
   function placeLabels(force = false): void {
@@ -534,6 +562,27 @@ function createKeyboardScene(
     }
   }
 
+  /**
+   * 跳过空档：这一帧没有任何按下、而下一颗键还要等很久时，把数据时钟直接落到它身上。
+   *
+   * 为什么要跳：时间流逝里"时间"是数据时间，一天 4 秒。一天里真正有按键的只有十几个
+   * 小时，剩下的夜里、午休、会议都没有输入——按真实比例放出来就是一段**一动不动**的
+   * 死等，用户读到的却是"这一天的数字放完了，得等日期翻页才继续"（2026-10-31 原话）。
+   * 空档里没有信息可看，跳过它不损失任何东西，反而让"日期翻页"和"数字继续涨"发生在
+   * 同一瞬间。
+   *
+   * @returns 这一次跳过去额外放出的按下数（0 表示没跳）
+   */
+  function skipGap(data: PressStreamData, added: number): number {
+    if (added > 0 || !stream || !streamCursor) return 0;
+    const next = streamCursor.nextTime;
+    // 没有下一颗键了：剩下的只是"这一天还没过完"，同样没有信息，直接走到结尾。
+    const target = next ?? data.spanMs;
+    const wallMs = ((target - streamCursor.offset) / stream.rate) * 1000;
+    if (wallMs <= GAP_SKIP_WALL_MS) return 0;
+    return streamCursor.advanceTo(target);
+  }
+
   function setStream(next: KeyboardStreamSource | null): void {
     if (!next) {
       stream = null;
@@ -551,7 +600,6 @@ function createKeyboardScene(
       streamP95 = Math.max(1, next.data.p95);
       streamSeekApplied = null;
       streamEnded = false;
-      streamAngle = 0;
       // 从第一颗键按下开始：库里最早的月表可能比数据早好几天，别让动画先空转。
       streamCursor.seek(next.data.times.length ? next.data.times[0] : 0);
       streamLastFrame = performance.now();
@@ -816,7 +864,7 @@ function createKeyboardScene(
           entry.rippleAt = null;
           entry.mesh.position.y = entry.baseY;
           entry.mesh.scale.setScalar(1);
-          entry.material.emissiveIntensity = 0;
+          glowBack(entry);
           capsMoved = true;
         } else if (wave >= 0 && !reduced) {
           const lift = Math.sin(Math.PI * wave);
@@ -836,14 +884,23 @@ function createKeyboardScene(
       if (progress >= 1) {
         entry.pressStart = null;
         entry.mesh.position.y = entry.baseY;
-        entry.material.emissiveIntensity = 0;
+        entry.mesh.scale.setScalar(1);
+        glowBack(entry);
         capsMoved = true;
       } else if (reduced) {
         // 减少动态：不下沉，改用一次高光回弹。
         entry.material.emissive.setRGB(1, 1, 1);
         entry.material.emissiveIntensity = (1 - progress) * 0.45;
       } else {
-        entry.mesh.position.y = entry.baseY - PRESS_DEPTH * Math.sin(Math.PI * progress);
+        // 下沉 + 一点点收缩 + 一次暖光。**三样都要**：俯视角下只看得到 1.6mm 的下沉，
+        // 而"播放今天"在「日常」那套热力色上也必须看得出来（用户 2026-10-31 的原话是
+        // "日常页面没效果"）。这里刻意**不动色相**，只叠一层短促的暖光——在已经有颜色的
+        // 键盘上改颜色只会让人以为读数变了。
+        const pulse = Math.sin(Math.PI * progress);
+        entry.mesh.position.y = entry.baseY - PRESS_DEPTH * pulse;
+        entry.mesh.scale.setScalar(1 - pulse * 0.045);
+        entry.material.emissive.set(PRESS_GLOW);
+        entry.material.emissiveIntensity = pulse * 0.7;
         capsMoved = true;
       }
     }
@@ -863,22 +920,10 @@ function createKeyboardScene(
         // 落位后立刻放水波：这是"拉近之后再加载水波动画"的时序。
         nextRippleAt = now + 60;
       }
-    } else if (
-      ready &&
-      mode === 'showcase' &&
-      !reduced &&
-      fitDistance > 0 &&
-      (!intro || (introRippleEnd > 0 && now >= introRippleEnd))
-    ) {
-      // 展示模式：相机极缓慢地左右摆 1.5°（周期约 52 秒）。要等开屏水波演完再开始，
-      // 否则镜头在动、键帽在起伏，两层动画互相打。日常模式不动——
-      // 那张图要读数，视角一转键面数字就废了（见文件头）。
-      const sway = Math.sin(now * 0.00012) * 0.026;
-      swayDirection.copy(CAMERA_DIRECTION).applyAxisAngle(UP, sway);
-      camera.position.copy(modelCenter).addScaledVector(swayDirection, fitDistance);
-      camera.lookAt(modelCenter);
-      camera.updateMatrixWorld();
     }
+    // 落位之后镜头就**固定**了。早先「展示」观感里还有一段 ±1.5°、周期 52 秒的缓慢摆动，
+    // 2026-10-31 按用户要求去掉了：键面读数是按相机投影摆上去的，镜头一动，数字就得每帧
+    // 重投影（还会轻微漂），而这一整页要的正是"读数稳定"。运镜只留在开屏那一次。
 
     // 水波：开屏落位后放一次；演完（最后一片涟漪也回到原位）再通知宿主收浮层。
     if (ready && ripplesLeft > 0 && now >= nextRippleAt) {
@@ -891,7 +936,8 @@ function createKeyboardScene(
       callbacks.onIntroEnd();
     }
 
-    // 时间流逝：推进数据时钟，按 15Hz 刷新键面，镜头缓慢环绕。
+    // 时间流逝：推进数据时钟，按 15Hz 刷新键面。**镜头固定**（用户 2026-10-31：
+    // "键盘不用旋转，固定视角"）——镜头一动，键面数字就要跟着重投影，读数也晃。
     if (stream && streamCursor && ready && fitDistance > 0) {
       const data = stream.data;
       /** 这一帧真的新增了按下吗？没有新按下时键面上的读数不会变，别白刷 104 格。 */
@@ -901,26 +947,24 @@ function createKeyboardScene(
         const delta = Math.min(100, Math.max(0, now - streamLastFrame));
         streamLastFrame = now;
         // 速率是"数据毫秒 / 真实秒"，这里 delta 是真实毫秒，所以除 1000。
-        let offset = streamCursor.offset + (delta / 1000) * stream.rate;
-        if (offset >= data.spanMs) {
-          offset = data.spanMs;
+        const offset = streamCursor.offset + (delta / 1000) * stream.rate;
+        added = streamCursor.advanceTo(Math.min(offset, data.spanMs));
+        // **空档直接跳过去**：一段结束后的夜里、或两段会话之间，画面会一动不动地等，
+        // 而用户看到的是"这一天的数字放完了，得等左上角的日期翻页才继续"。这段时间
+        // 没有信息，按真实时间放它只会变成一段死等——所以超过 GAP_SKIP_WALL_MS 的
+        // 空档直接落到下一颗键上，日期跟着一起跳。
+        added += skipGap(data, added);
+        if (streamCursor.offset >= data.spanMs) {
           streamEnded = true;
           callbacks.onStreamEnd();
         }
-        added = streamCursor.advanceTo(offset);
-        // 环绕角度只在播放时累加：暂停时镜头也应该停住，否则"暂停"只停数字不停画面。
-        streamAngle += delta * 0.00012;
       } else {
         // 暂停/结束时持续把基准拉到 now，继续播放的第一帧才不会跳。
         streamLastFrame = now;
       }
-      // 暂停且没有新按下 → 画面逐字节相同，连投影和重绘都可以省掉（见下面 return）。
+      // 暂停且没有新按下 → 画面逐字节相同，连投影和重绘都可以省掉。
       if (stream.playing || added > 0) {
-        swayDirection.copy(CAMERA_DIRECTION).applyAxisAngle(UP, Math.sin(streamAngle) * 0.11);
-        camera.position.copy(modelCenter).addScaledVector(swayDirection, fitDistance);
-        camera.lookAt(modelCenter);
-        camera.updateMatrixWorld();
-        // 相机在动，数字叠层必须跟着重投影；这里只做投影，不量字号。
+        // 镜头不动，标签的投影结果也就不变；这次调用里绝大多数键会被半像素去重直接跳过。
         placeLabels();
         if (now - streamLastRefresh >= STREAM_REFRESH_MS) {
           streamLastRefresh = now;

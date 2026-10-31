@@ -185,4 +185,13 @@ export class PressCursor {
   get firstOffset(): number {
     return this.data.count ? this.data.times[0] : 0;
   }
+
+  /**
+   * 下一颗还没放出来的按键（偏移）；已经放完给 `null`。
+   *
+   * 时间流逝用它判断"现在是空档还是真的到头了"：空档要跳过，到头了要停在结尾。
+   */
+  get nextTime(): number | null {
+    return this.index < this.data.count ? this.data.times[this.index] : null;
+  }
 }
