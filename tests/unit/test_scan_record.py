@@ -7,6 +7,7 @@
 
 from __future__ import annotations
 
+import subprocess
 import sys
 from pathlib import Path
 
@@ -132,6 +133,29 @@ def test_collect_ignores_artifacts_that_were_not_built(dist: Path):
         scan_record.build._executable_name(),
         scan_record.build.portable_name(),
     ]
+
+
+def test_collect_hands_the_scanner_an_absolute_path(dist: Path, monkeypatch):
+    """MpCmdRun 的 ``-File`` 不认相对路径。
+
+    相对路径的失败形状是退出码 2 + ``hr = 0x80508023``，而 :func:`scan_record.interpret`
+    按输出判定，会把它记成"引擎不可用"——同一份干净产物被写成"没扫成"，发布记录里
+    那就是一句假话。``--dist .release-verify`` 这种写法很自然，所以 collect 自己 resolve。
+    """
+    seen: list[str] = []
+
+    def fake_run(command, **kwargs):
+        seen.append(command[command.index("-File") + 1])
+        return subprocess.CompletedProcess(command, 0, CLEAN_OUTPUT.encode("utf-8"), b"")
+
+    monkeypatch.setattr(scan_record.subprocess, "run", fake_run)
+    monkeypatch.setattr(scan_record, "defender_cli", lambda *_: (Path("stub"), "4.18.1-0"))
+    monkeypatch.chdir(dist.parent)
+
+    scan_record.collect(Path(dist.name))  # 相对路径进来
+
+    assert seen
+    assert all(Path(item).is_absolute() for item in seen)
 
 
 def test_render_records_the_facts_a_user_can_check(dist: Path):

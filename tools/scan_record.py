@@ -229,6 +229,11 @@ def collect(dist: Path = DIST, *, run_scan: bool = True) -> tuple[list[Scanned],
     产物名单来自 :func:`build.artifact_names`——两处各写一遍的话，改名那天记录会
     静默少一行，而"少一行"和"这件产物没问题"在文档里长得一模一样。
     """
+    # **交给 MpCmdRun 的必须是绝对路径**：它的 ``-File`` 不认相对路径，而失败形状是
+    # 退出码 2 + ``CmdTool: Failed with hr = 0x80508023``——``interpret`` 会把它记成
+    # "引擎不可用"。2026-10-31 实测：``--dist .release-verify`` 得到的记录是"未执行"，
+    # 同一个目录换成绝对路径立刻变成"未报警"。一份假话比没有记录更坏。
+    dist = Path(dist).resolve()
     cli, engine = (defender_cli() if run_scan else (None, ""))
     published = set(build.published_names())
     scanned: list[Scanned] = []
