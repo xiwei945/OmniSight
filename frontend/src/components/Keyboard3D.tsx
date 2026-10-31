@@ -42,15 +42,60 @@ import type { HeatmapKey, HeatmapResponse } from '../types/api.d.ts';
 export type Keyboard3DMode = 'heat' | 'showcase';
 
 /** 按下动画时长。 */
-const PRESS_MS = 170;
-/** 下沉深度（模型单位 = 米）。键帽本身高 4mm，沉 1.6mm 是明显的 40%。 */
-const PRESS_DEPTH = 0.0016;
+const PRESS_MS = 150;
+/**
+ * 下压占整段的比例：**快下、慢回**。
+ *
+ * 视频里的按压是"啪"地一下到底、过一会儿才浮回来，不是正弦上下对称——对称的曲线读起来
+ * 像"呼吸"，不像打字。下压只用 28% 的时长（42ms 到底），剩下的时间用来回弹。
+ */
+const PRESS_DOWN = 0.28;
+/**
+ * 下沉深度。**单位是键帽父节点的局部单位 = 毫米，不是米。**
+ *
+ * 键帽挂在 `KeyboardRoot` 下，那个节点 `scale = 0.001`（模型是按毫米建的）：`mesh.position`
+ * 写 1 就是 1mm。早先这里写的是 0.0028（按"米"算的 2.8mm），实际只沉了 2.8 微米——
+ * 屏幕上完全看不见，用户说的"键帽没有上下移动"就是这个（2026-10-31）。
+ * 键帽本身高 4mm，沉 2.8mm 是"快到底"。
+ */
+const PRESS_DEPTH = 2.8;
+/** 下压时键帽同时收一点：单靠位移在俯视角下不够，收边把"往里走"补上。 */
+const PRESS_SHRINK = 0.035;
 
 /**
  * 按压时叠的那层光。**接近白**而不是色阶里的沙色：热力档最暖的几档本身就是沙/橙，
  * 沙上加沙等于没有反馈。「日常」那套彩色键帽上，只有提亮（而不是换色）才读得出来。
  */
 const PRESS_GLOW = '#ffe9c8';
+
+/**
+ * 时间流逝里按压动画的节拍：隔这么久挑几颗键按下去（≈38 次/秒）。
+ *
+ * 数据时间一秒能推进几小时、放出几千次按下，**逐次播按压是没意义的**——一帧里几百次
+ * 按下，键帽只能糊成一片抖。这里按固定节拍抽样：观感上是"有人在快速地打"，而不是
+ * "整块键盘在闪"。抽样只影响动画，不影响读数（读数仍然逐次累加）。
+ */
+const STREAM_PRESS_EVERY_MS = 26;
+/** 一拍最多起几颗键。和 `PRESS_MS` 一起决定同时下沉的键数（约 6 颗）。 */
+const STREAM_PRESS_PER_TICK = 2;
+/**
+ * 键帽在动时，阴影贴图最快多久重画一次。
+ *
+ * 2048² 的投影很贵（4 倍降速下每帧重画会让帧率从 58 掉到 22）。按压位移只有 3~5px、
+ * 影子跟着走一两帧的延迟看不出来；而水波/按压结束的那一下会补画一次，所以不会留下
+ * "影子停在半路"的错位。见 loop 里的 `shadowPending`。
+ */
+const SHADOW_REFRESH_MS = 48;
+
+/** 按下动画的强度曲线：0 → 1 → 0，前 28% 到底，之后回弹。见 `PRESS_DOWN`。 */
+function pressAmount(progress: number): number {
+  if (progress <= PRESS_DOWN) {
+    const down = progress / PRESS_DOWN;
+    return down * (2 - down);
+  }
+  const up = (progress - PRESS_DOWN) / (1 - PRESS_DOWN);
+  return 1 - up * up;
+}
 
 /** 时间流逝：数据时间的推进速率（每 1 秒真实时间推进多少毫秒数据）。 */
 export interface KeyboardStreamSource {
@@ -85,17 +130,16 @@ const GAP_SKIP_WALL_MS = 140;
 
 
 /**
- * 固定视角：**3/4 低机位**（俯角约 45°，从前往左偏一点）。界面不提供改它的入口。
+ * 固定视角：**3/4 俯视**（俯角 64°，正前方略偏下）。界面不提供改它的入口。
  *
- * 2026-10-31 按参考视频（BV1JWbk6ZEkp，1080p 逐帧）校准：原来是近俯视 67°，
- * 视频是 30° 上下 —— 俯角一低，键帽的侧壁和前缘就露出来了，键面从"平铺的一张表"
- * 变回"一台放在桌上的键盘"，这也是那段视频一眼能认出来的地方。
+ * 2026-10-31 按参考视频（BV1JWbk6ZEkp，1080p 逐帧）校准过一次：视频是 30° 上下的低机位，
+ * 仰视过去键帽的侧壁和前缘全露出来，一眼能认出"一台放在桌上的键盘"。我先试到 55°。
  *
- * 最终取 45° 而不是 30°：**这把猫耳键盘**的键帽是几何高度场、侧面比常规键帽高，
- * 机位再低就开始互相遮挡，上一排会压住下一排的读数。45° 保住机位特征，
- * 也保住键面可读——可读性优先，见文件头。
+ * 55° 之后用户又要求"角度再抬高一些，这个倾斜看到的范围有点小"——低机位看着像，但透视
+ * 压得太狠，后半张键盘挤成一条，能读的键面也就少了小半。所以**拉回 64°**：仍然保留前后
+ * 排的大小差（这是 3/4 的标志），但键面接近方形、整块板都摊得开。可读性优先，见文件头。
  */
-const CAMERA_DIRECTION = new THREE.Vector3(0, 0.82, 0.57).normalize();
+const CAMERA_DIRECTION = new THREE.Vector3(0, 0.899, 0.438).normalize();
 /** 开屏运镜：从 2.4 倍距离拉到取景距离，缓出 3.6 秒。 */
 const INTRO_MS = 1800;
 const INTRO_START_SCALE = 2.6;
@@ -109,10 +153,10 @@ const INTRO_START_SCALE = 2.6;
 const RIPPLE_DELAY_MS_PER_M = 5000;
 const RIPPLE_MS = 420;
 /**
- * 起伏高度。**别再调小**：这个视角是近正视（俯角 23°），屏幕上的纵向位移只有实际高度的
- * sin(23°)≈0.39 倍；12mm 只投出 5mm（约 10px），看起来就是"亮了一下"。18mm 才够读。
+ * 起伏高度。**同样是毫米**（见 `PRESS_DEPTH`）。真实键程 4mm，开屏这一次表演抬到 6mm：
+ * 这个视角下 1mm 约投出 2px，6mm 就是一道一眼看得见的浪。
  */
-const RIPPLE_DEPTH = 0.018;
+const RIPPLE_DEPTH = 6;
 const CAMERA_FOV = 18;
 
 interface KeyEntry {
@@ -338,6 +382,11 @@ function createKeyboardScene(
   let streamEnded = false;
   /** key_id → 按键流里的下标。 */
   let streamIndex = new Map<string, number>();
+  /** 上一次起"按压节拍"的时刻。见 `startStreamPresses`。 */
+  let streamPressAt = 0;
+  /** 上一次重画阴影贴图的时刻；`shadowPending` = 键帽还在动、影子还没收到最终位置。 */
+  let shadowAt = 0;
+  let shadowPending = false;
 
   // ── 「播放今天」的计数舞台 ──────────────────────────────────────────────
   //
@@ -744,6 +793,7 @@ function createKeyboardScene(
       streamIndex = new Map();
       streamSeekApplied = null;
       streamEnded = false;
+      streamPressAt = 0;
       if (ready) refresh();
       return;
     }
@@ -806,6 +856,35 @@ function createKeyboardScene(
   function press(keyId: string): void {
     const entry = keys.get(keyId);
     if (entry) entry.pressStart = performance.now();
+  }
+
+  /**
+   * 时间流逝的按压节拍：从游标的"最近按键"环里挑还没在动的键，按下。
+   *
+   * 数据时间 4 秒过一天，一帧就能放出几千次按下——**逐次播按压在物理上就播不过来**：
+   * 一帧里几十上百颗键同时下沉，画面只会糊成一片抖。所以按固定节拍抽样，让"有键在动"
+   * 这件事连续存在，观感是"有人一直在快速地打"，而不是"整块板在闪"。
+   *
+   * 取样**跨着环跳读**（步长 3），不是只读最新那几个：高速时最新的 128 条按下往往全落在
+   * 一两颗键上（连续打字就是同一根手指连着敲），只读最新的会让整块键盘只有一颗键在抖。
+   */
+  function startStreamPresses(now: number): void {
+    if (!stream || !streamCursor) return;
+    const recent = streamCursor.recent;
+    const size = streamCursor.recentCount;
+    if (!size) return;
+    let started = 0;
+    for (let step = 0; step < size && started < STREAM_PRESS_PER_TICK; step += 3) {
+      // 环里最新的那颗在 `recentHead - 1`，倒着读。没写满时 `recentHead === size`，
+      // 所以这个式子对"没满"和"满了"两种状态都对。
+      const at = (streamCursor.recentHead - 1 - step + recent.length) % recent.length;
+      const keyId = stream.data.keys[recent[at]];
+      if (!keyId) continue;
+      const entry = keys.get(keyId);
+      if (!entry || entry.pressStart !== null) continue;
+      entry.pressStart = now;
+      started += 1;
+    }
   }
 
   function pick(event: PointerEvent): string | null {
@@ -1065,20 +1144,38 @@ function createKeyboardScene(
         entry.material.emissive.setRGB(1, 1, 1);
         entry.material.emissiveIntensity = (1 - progress) * 0.45;
       } else {
-        // 下沉 + 一点点收缩 + 一次暖光。**三样都要**：俯视角下只看得到 1.6mm 的下沉，
+        // 深度 + 收缩 + 一次暖光。**前两样是主菜**：俯视角下只看得到 1~3px 的下沉，
         // 而"播放今天"在「日常」那套热力色上也必须看得出来（用户 2026-10-31 的原话是
         // "日常页面没效果"）。这里刻意**不动色相**，只叠一层短促的暖光——在已经有颜色的
         // 键盘上改颜色只会让人以为读数变了。
-        const pulse = Math.sin(Math.PI * progress);
-        entry.mesh.position.y = entry.baseY - PRESS_DEPTH * pulse;
-        entry.mesh.scale.setScalar(1 - pulse * 0.045);
-        entry.material.emissive.set(PRESS_GLOW);
-        entry.material.emissiveIntensity = pulse * 0.7;
+        const amount = pressAmount(progress);
+        entry.mesh.position.y = entry.baseY - PRESS_DEPTH * amount;
+        entry.mesh.scale.setScalar(1 - amount * PRESS_SHRINK);
+        // 时间流逝那一路每 66ms 会按档位重写 emissive（换档就清零），压下去的光会被
+        // 半路掐掉、变成闪烁。所以那条路上只留位移和影子——参考视频里按下去也不发光。
+        if (!stream) {
+          entry.material.emissive.set(PRESS_GLOW);
+          entry.material.emissiveIntensity = amount * 0.6;
+        }
         capsMoved = true;
       }
     }
     // 键帽没动 → 阴影贴图这一帧一定和上一帧一样，不必重画（2048² 的一次完整投影）。
-    if (capsMoved) renderer.shadowMap.needsUpdate = true;
+    //
+    // 键帽**一直在动**（时间流逝里每秒几十次按下）时也不能每帧重画：实测 4 倍降速下
+    // 每帧重画阴影把帧率从 58 打到 22。但按压只有 150ms、位移 3~5px，影子落后一两帧
+    // 看不出来，所以按 `SHADOW_REFRESH_MS` 节流；**停下来那一刻补画一次**，否则影子会
+    // 永远停在半路上的位置。
+    if (capsMoved) {
+      if (now - shadowAt >= SHADOW_REFRESH_MS) {
+        shadowAt = now;
+        renderer.shadowMap.needsUpdate = true;
+      }
+      shadowPending = true;
+    } else if (shadowPending) {
+      shadowPending = false;
+      renderer.shadowMap.needsUpdate = true;
+    }
 
     // 「播放今天」：只重画这一帧真的变过读数的键（通常 1–3 颗）。
     if (replayActive && replayDirty.size) {
@@ -1136,6 +1233,12 @@ function createKeyboardScene(
         // 没有信息，按真实时间放它只会变成一段死等——所以超过 GAP_SKIP_WALL_MS 的
         // 空档直接落到下一颗键上，日期跟着一起跳。
         added += skipGap(data, added);
+        // 按压节拍：数据时钟真的推进了，才让几颗键沉下去。按真实时钟节拍起拍，
+        // 而不是"每放出一颗键就动一次"——见 `STREAM_PRESS_EVERY_MS`。
+        if (added > 0 && now - streamPressAt >= STREAM_PRESS_EVERY_MS) {
+          streamPressAt = now;
+          startStreamPresses(now);
+        }
         if (streamCursor.offset >= data.spanMs) {
           streamEnded = true;
           callbacks.onStreamEnd();

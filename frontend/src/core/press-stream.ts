@@ -148,6 +148,19 @@ export function dayIndexAt(data: PressStreamData, offsetMs: number): number {
 export class PressCursor {
   readonly data: PressStreamData;
   readonly counts: Uint32Array;
+  /**
+   * 最近放出的按键下标（环形缓冲，`recentHead` 指向下一个写入位——所以**最新的那颗在
+   * `recentHead - 1`**）。3D 场景按它挑"这一拍该让哪颗键帽下沉"，见 `Keyboard3D` 的
+   * `startStreamPresses`。
+   *
+   * 为什么不直接在 `advanceTo` 里回调：一次 `advanceTo` 在 4 秒/天的速率下会放出上万次
+   * 按下，逐条回调等于每帧上万次动画调度。留一个 128 的环，让渲染侧自己决定要不要、
+   * 要几颗——抽样是**观感**问题，不该混进游标的数据逻辑里。
+   */
+  readonly recent = new Uint16Array(128);
+  /** 环里已经写进去多少条（封顶到 `recent.length`）。 */
+  recentCount = 0;
+  recentHead = 0;
   /** 当前数据时间（毫秒偏移）。 */
   offset = 0;
   /** 已经放出的按下次数。 */
@@ -162,9 +175,14 @@ export class PressCursor {
   /** 前进到 `offsetMs`，返回这一帧新加的按下次数。 */
   advanceTo(offsetMs: number): number {
     const { times, indices, count } = this.data;
+    const { recent } = this;
     let added = 0;
     while (this.index < count && times[this.index] <= offsetMs) {
-      this.counts[indices[this.index]] += 1;
+      const key = indices[this.index];
+      this.counts[key] += 1;
+      recent[this.recentHead] = key;
+      this.recentHead = (this.recentHead + 1) % recent.length;
+      if (this.recentCount < recent.length) this.recentCount += 1;
       this.index += 1;
       added += 1;
     }
@@ -180,6 +198,10 @@ export class PressCursor {
     this.total = 0;
     this.offset = 0;
     this.advanceTo(Math.max(0, offsetMs));
+    // 跳过去的那一大段不算"正在打的手指"：清空环，让按压动画从跳转之后的新按键重新起。
+    // 清在 `advanceTo` 之后——否则补放的那几千条会把环塞满，下一拍动的是跳转前的键。
+    this.recentCount = 0;
+    this.recentHead = 0;
   }
 
   /** 第一条按下的偏移；用来跳过开头的空档。 */

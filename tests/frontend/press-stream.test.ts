@@ -116,6 +116,44 @@ test('第几天按天边界二分，不越界', () => {
   assert.equal(dayIndexAt(data, 999_999_999), 1);
 });
 
+test('游标记下最近放出的按键，新的在后，seek 清环', () => {
+  const data = decodePressStream(payloadOf());
+  assert.ok(data);
+  const cursor = new PressCursor(data);
+  assert.equal(cursor.recentCount, 0);
+
+  cursor.advanceTo(250);
+  assert.equal(cursor.recentCount, 3);
+  const newest = (cursor.recentHead - 1 + cursor.recent.length) % cursor.recent.length;
+  const lastThree = [0, 1, 2].map(
+    (step) => cursor.recent[(newest - step + cursor.recent.length) % cursor.recent.length],
+  );
+  // 三次按下依次是 a、space、space，所以倒着读是 space、space、a。
+  assert.deepEqual(lastThree, [1, 1, 0]);
+
+  // 跳转之后环是空的：拿跳转前的手指去播按压动画会动错键。
+  cursor.seek(100);
+  assert.equal(cursor.recentCount, 0);
+});
+
+test('最近按键的环不会越写越长', () => {
+  const total = 300;
+  const times: number[] = [];
+  const indices: number[] = [];
+  for (let index = 0; index < total; index += 1) {
+    times.push(...varint(index === 0 ? 0 : 1));
+    indices.push(0);
+  }
+  const data = decodePressStream(
+    payloadOf({ count: total, times: base64(times), indices: base64(indices) }),
+  );
+  assert.ok(data);
+  const cursor = new PressCursor(data);
+  cursor.advanceTo(10_000);
+  assert.equal(cursor.total, total);
+  assert.equal(cursor.recentCount, cursor.recent.length);
+});
+
 test('终值 p95 只看按过的键', () => {
   const data = decodePressStream(payloadOf());
   assert.ok(data);
