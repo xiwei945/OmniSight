@@ -84,8 +84,18 @@ const STREAM_REFRESH_MS = 66;
 const GAP_SKIP_WALL_MS = 140;
 
 
-/** 固定视角：略高的 3/4 俯视，右侧稍近。界面不提供改它的入口。 */
-const CAMERA_DIRECTION = new THREE.Vector3(0, 1, 0.42).normalize();
+/**
+ * 固定视角：**3/4 低机位**（俯角约 45°，从前往左偏一点）。界面不提供改它的入口。
+ *
+ * 2026-10-31 按参考视频（BV1JWbk6ZEkp，1080p 逐帧）校准：原来是近俯视 67°，
+ * 视频是 30° 上下 —— 俯角一低，键帽的侧壁和前缘就露出来了，键面从"平铺的一张表"
+ * 变回"一台放在桌上的键盘"，这也是那段视频一眼能认出来的地方。
+ *
+ * 最终取 45° 而不是 30°：**这把猫耳键盘**的键帽是几何高度场、侧面比常规键帽高，
+ * 机位再低就开始互相遮挡，上一排会压住下一排的读数。45° 保住机位特征，
+ * 也保住键面可读——可读性优先，见文件头。
+ */
+const CAMERA_DIRECTION = new THREE.Vector3(0, 0.82, 0.57).normalize();
 /** 开屏运镜：从 2.4 倍距离拉到取景距离，缓出 3.6 秒。 */
 const INTRO_MS = 1800;
 const INTRO_START_SCALE = 2.6;
@@ -118,6 +128,16 @@ interface KeyEntry {
   center: THREE.Vector3;
   /** 键帽半宽（世界单位），用来推字号。 */
   halfWidth: number;
+  /** 键帽半深（世界单位），用来把数字压到键面那个透视角度上。 */
+  halfDepth: number;
+  /**
+   * 让数字"躺在键面上"的仿射矩阵（CSS `matrix(...)`）。
+   *
+   * 相机固定，所以这个矩阵**只跟相机角度有关、与帧无关**：在 `layoutLabels` 里算一次。
+   * 它把文字的 x 轴对齐键面右方向、把 y 轴按俯角压扁——于是低机位下数字不会像贴在
+   * 屏幕上那样又大又平，而是跟着键帽一起扁下去。
+   */
+  labelMatrix: string;
   /** 键帽在屏幕上的宽度（px）与读数下移量，`placeLabels` 每帧复用（不重量字体）。 */
   widthPx: number;
   offsetPx: number;
@@ -482,18 +502,37 @@ function createKeyboardScene(
     }
   }
 
-  /** 布局：算键宽、字号、读数偏移，然后摆一次位置。只在尺寸变化时跑。 */
+  /** 布局：算键宽、字号、读数偏移、贴键面的仿射矩阵，然后摆一次位置。只在尺寸变化时跑。 */
   function layoutLabels(): void {
     if (!ready) return;
     const width = container.clientWidth || 1;
+    const height = container.clientHeight || 1;
     const edge = new THREE.Vector3();
     const axial = new THREE.Vector3();
+    const rightEnd = new THREE.Vector3();
+    const downEnd = new THREE.Vector3();
     for (const entry of keys.values()) {
       const projected = scratch.copy(entry.center).project(camera);
       edge.copy(entry.center).add(axial.set(entry.halfWidth, 0, 0)).project(camera);
       const keyWidthPx = Math.abs(edge.x - projected.x) * 0.5 * width;
       entry.widthPx = keyWidthPx;
-      entry.offsetPx = keyWidthPx > 90 ? 0 : Math.min(8, keyWidthPx * 0.12);
+      entry.offsetPx = keyWidthPx > 90 ? 0 : Math.min(6, keyWidthPx * 0.08);
+
+      // **贴键面**：把键面的两个基向量（右向 +x、朝向观察者 +z）投影到屏幕，得到它们在
+      // 屏幕上的像素长度。右向按满长（文字不再被横向拉伸），朝前那一向按它自己缩短的
+      // 比例压扁——于是数字像被"印"在键帽上，跟着机位一起扁下去。
+      rightEnd.copy(entry.center).add(axial.set(entry.halfWidth * 2, 0, 0)).project(camera);
+      downEnd.copy(entry.center).add(axial.set(0, 0, entry.halfDepth * 2)).project(camera);
+      const ux = (rightEnd.x - projected.x) * 0.5 * width;
+      const uy = -(rightEnd.y - projected.y) * 0.5 * height;
+      const vx = (downEnd.x - projected.x) * 0.5 * width;
+      const vy = -(downEnd.y - projected.y) * 0.5 * height;
+      const span = Math.hypot(ux, uy) || 1;
+      entry.labelMatrix =
+        `matrix(${(ux / span).toFixed(4)},${(uy / span).toFixed(4)},` +
+        `${(vx / span).toFixed(4)},${(vy / span).toFixed(4)},0,0)`;
+      entry.valueNode.style.transform = entry.labelMatrix;
+
       // 字号跟着键宽走；宽度收到键面以内，免得压到隔壁键。
       // **隐藏的标签也要先给一个字号**：时间流逝里它们在模型加载完时全是隐藏的，
       // 等第一次出现数字再算，第一帧会是继承来的 16px、直接压到隔壁键上。
@@ -881,6 +920,8 @@ function createKeyboardScene(
           rippleAt: null,
           center: new THREE.Vector3(),
           halfWidth: 0,
+          halfDepth: 0,
+          labelMatrix: '',
           widthPx: 0,
           offsetPx: 0,
           label,
@@ -926,11 +967,12 @@ function createKeyboardScene(
       shadow.position.set(modelCenter.x, box.min.y - 0.0008, modelCenter.z);
       scene.add(shadow);
 
-      // 每个键帽的世界中心与半宽，供数字叠层定位。
+      // 每个键帽的世界中心与半宽/半深，供数字叠层定位与"贴键面"的仿射变换。
       for (const entry of keys.values()) {
         const keyBox = new THREE.Box3().setFromObject(entry.mesh);
         keyBox.getCenter(entry.center);
         entry.halfWidth = (keyBox.max.x - keyBox.min.x) / 2;
+        entry.halfDepth = (keyBox.max.z - keyBox.min.z) / 2;
       }
 
       fitCamera();
