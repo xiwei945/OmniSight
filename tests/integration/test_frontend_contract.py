@@ -42,7 +42,7 @@ PAGE_MOUNTS: dict[str, tuple[str, ...]] = {
 PAGE_PATHS = ("/", "/settings", "/about", "/healthz")
 
 #: 路由标签的 id 约定（syncTabs 按 `tab-<route>` 拼）。
-ROUTES = ("overview", "apps", "keyboard", "insights")
+ROUTES = ("overview", "apps", "keyboard", "mouse", "insights")
 
 _API_LITERAL = re.compile(r"['\"`](/(?:api/v1/)?[a-z][a-z0-9/_$\-{}.]*)['\"`]")
 
@@ -320,6 +320,9 @@ ENDPOINT_TYPES: tuple[tuple[str, str], ...] = (
         "KeyboardTimelineResponse",
     ),
     (f"/api/v1/keyboard/ergonomics?{DAY}", "ErgonomicsResponse"),
+    # 鼠标：五张卡一次取回（分布 / 应用 / 小时 / 趋势 / 键鼠比）。
+    (f"/api/v1/mouse?{DAY}", "MouseResponse"),
+    ("/api/v1/mouse?range=total", "MouseResponse"),
     # 回放：可用性 + 带上毫秒偏移的有序事件。需要当天有原始事件（seeded 播了 2026-09-02）。
     ("/api/v1/keyboard/replay?date=2026-09-02", "KeyboardReplayResponse"),
     # 时间流逝：逐次按键流（两段 base64 二进制 + 天边界）。

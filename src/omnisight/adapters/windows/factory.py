@@ -30,6 +30,7 @@ from .idle import WindowsIdleSource
 from .keyboard import BACKEND_NAME as RAW_INPUT_BACKEND
 from .keyboard import RawInputKeyboardSource
 from .logon_task import LogonTaskAutostart
+from .mouse import RawInputMouseSource
 from .notifier import MessageBoxNotifier
 from .single_instance import NamedMutexInstanceLock
 
@@ -99,6 +100,10 @@ def detect() -> Capabilities:
         keyboard_backend=RAW_INPUT_BACKEND,
         keyboard_backends=tuple(backends),
         keyboard_durations=True,
+        # 鼠标与键盘共用同一个注册 API，但**各是一次注册**：设备级失败互不牵连，
+        # 因此这里只断言"API 在"，真正的成败由 start() 与 reconcile() 收敛。
+        mouse=_has_export("user32", "RegisterRawInputDevices"),
+        mouse_backend=RAW_INPUT_BACKEND,
         key_position_stable=True,
         foreground=_has_export("user32", "GetForegroundWindow"),
         window_titles=_has_export("user32", "GetWindowTextW"),
@@ -234,6 +239,11 @@ def build(
             else None
         ),
         keyboard=_build_keyboard(options, environment),
+        mouse=(
+            RawInputMouseSource(on_session_end=options.on_session_end)
+            if environment.mouse
+            else None
+        ),
         idle=WindowsIdleSource() if environment.idle else None,
         icons=icon_source,
     )

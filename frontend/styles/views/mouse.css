@@ -1,0 +1,36 @@
+/* 鼠标视图。
+ *
+ * 两处排行共用同一个手法：**一行是一整个网格的行**（`display: contents`），而不是每行各自
+ * 一个网格——只有同一个网格才能让条形与数字上下对齐，同时让名称列按最长的那一个撑开。
+ * 这是 18 文档 批 7 在键盘 Top 10 上踩过的那条（固定 7ch 会裁掉 "PrintScreen"）。
+ */
+
+/* 五根按键条：按键名 / 占比条 / 次数 / 百分比。 */
+.mouse-buttons {
+  display: grid;
+  grid-template-columns: max-content minmax(0, 1fr) 7ch 6ch;
+  align-items: center;
+  gap: var(--space-2);
+  margin-top: 14px;
+  font-size: var(--text-sm);
+  font-variant-numeric: tabular-nums;
+}
+.mouse-button { display: contents; }
+.mouse-button__label { color: var(--text-secondary); white-space: nowrap; }
+.mouse-button__count { text-align: right; }
+.mouse-button__percent { text-align: right; color: var(--text-secondary); }
+
+/* 应用排行：名次 / 名称 / 占比条 / 次数 / 百分比。名称不换行，超出用省略号（title 属性
+   给全名），否则一个长进程名会把条形压成一条细线。 */
+.mouse-apps {
+  display: grid;
+  grid-template-columns: 3ch minmax(0, 1fr) minmax(0, 1.2fr) 7ch 6ch;
+  align-items: center;
+  gap: var(--space-2);
+  font-size: var(--text-sm);
+  font-variant-numeric: tabular-nums;
+}
+.mouse-app { display: contents; }
+.mouse-app__name { min-width: 0; }
+.mouse-app__count { text-align: right; }
+.mouse-app__percent { text-align: right; color: var(--text-secondary); }

@@ -21,6 +21,7 @@ from ..storage.database import Database
 from ..storage.repositories.apps import AppDirectory
 from ..storage.repositories.insights import InsightsRepository
 from ..storage.repositories.keys import KeyRepository
+from ..storage.repositories.mouse import MouseRepository
 from ..storage.repositories.usage import UsageRepository
 from . import coverage as coverage_module
 from . import period as period_module
@@ -43,12 +44,14 @@ class ServiceContext:
     adapters: Any = None
     usage_repo: UsageRepository | None = None
     key_repo: KeyRepository | None = None
+    mouse_repo: MouseRepository | None = None
     app_repo: AppDirectory | None = None
     insight_repo: InsightsRepository | None = None
 
     def __post_init__(self) -> None:
         self.usage_repo = self.usage_repo or UsageRepository(self.database)
         self.key_repo = self.key_repo or KeyRepository(self.database)
+        self.mouse_repo = self.mouse_repo or MouseRepository(self.database)
         self.app_repo = self.app_repo or AppDirectory(self.database)
         self.insight_repo = self.insight_repo or InsightsRepository(self.database)
 

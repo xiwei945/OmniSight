@@ -159,14 +159,30 @@ PRESS_TOTAL_SOURCES: tuple[tuple[str, str], ...] = (
 )
 
 
+#: 鼠标点击的五张表同样存的是同一个事实。**单独一组**，不能并进上面那组：
+#: 那组的判据是"所有值相等"，而点击次数与按键次数本来就不相等。
+MOUSE_TOTAL_SOURCES: tuple[tuple[str, str], ...] = (
+    ("agg_mouse_button_day", "SELECT SUM(click_count) FROM agg_mouse_button_day"),
+    ("agg_mouse_button_total", "SELECT SUM(click_count) FROM agg_mouse_button_total"),
+    ("agg_mouse_app_day", "SELECT SUM(click_count) FROM agg_mouse_app_day"),
+    ("agg_mouse_app_total", "SELECT SUM(click_count) FROM agg_mouse_app_total"),
+    ("agg_mouse_hour", "SELECT SUM(click_count) FROM agg_mouse_hour"),
+)
+
+
 def aggregate_integrity(context: Any) -> dict[str, Any]:
     conn = context.database.connect()
     aggregates = {
         name: int(conn.execute(sql).fetchone()[0] or 0) for name, sql in PRESS_TOTAL_SOURCES
     }
+    mouse = {
+        name: int(conn.execute(sql).fetchone()[0] or 0) for name, sql in MOUSE_TOTAL_SOURCES
+    }
     return {
         "aggregates": aggregates,
         "match": len(set(aggregates.values())) == 1,
+        "mouse": mouse,
+        "mouse_match": len(set(mouse.values())) == 1,
         "data_version": context.database.data_version(),
     }
 
@@ -177,6 +193,7 @@ def _capture_status(context: Any) -> dict[str, Any]:
         return {
             "foreground": {"running": False, "backend": "none"},
             "keyboard": {"running": False, "backend": "none"},
+            "mouse": {"running": False, "backend": "none"},
             "writer": {"running": False},
             "paused": context.paused,
             "queue_depth": 0,

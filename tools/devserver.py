@@ -74,6 +74,8 @@ _BASE = Capabilities(
     keyboard_backend="raw_input",
     keyboard_backends=("auto", "raw_input", "pynput", "none"),
     keyboard_durations=True,
+    mouse=True,
+    mouse_backend="raw_input",
     key_position_stable=True,
     foreground=True,
     window_titles=True,
@@ -99,6 +101,10 @@ PRESETS: dict[str, Capabilities] = {
         # 能算按压时长——B6 落地后此预设如实翻转（20 文档 B6 末尾点名要改的那条）。
         keyboard_durations=True,
         key_position_stable=True,
+        # 鼠标采集目前只有 Windows 实现：二级平台的预设必须如实关掉，
+        # 否则"鼠标面板显示数据"这件事在 macOS 上根本不可能发生。
+        mouse=False,
+        mouse_backend="none",
         permissions_required=("input_monitoring",),
         permissions_granted=("accessibility",),
         setup_hint="在「系统设置 › 隐私与安全性 › 输入监控」中勾选 OmniSight",
@@ -113,6 +119,8 @@ PRESETS: dict[str, Capabilities] = {
         keyboard_backends=("auto", "evdev", "pynput", "none"),
         keyboard_durations=False,
         key_position_stable=True,
+        mouse=False,
+        mouse_backend="none",
         foreground=False,
         window_titles=False,
         icons=False,
@@ -121,6 +129,8 @@ PRESETS: dict[str, Capabilities] = {
     "no-keyboard": replace(
         _BASE, keyboard=False, keyboard_backend="none", keyboard_durations=False
     ),
+    # 鼠标后端起不来（安全软件拦截 Raw Input 注册）：看鼠标面板的降级态。
+    "no-mouse": replace(_BASE, mouse=False, mouse_backend="none"),
     "no-foreground": replace(_BASE, foreground=False, window_titles=False),
     "no-icons": replace(_BASE, icons=False),
     "no-titles": replace(_BASE, window_titles=False),

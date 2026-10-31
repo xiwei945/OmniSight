@@ -77,6 +77,40 @@ class KeyEvent:
         return CONFIDENCE_CODES[self.confidence]
 
 
+#: 鼠标按键的稳定标识。**只有按键，没有坐标与滚轮**——这一版统计的是点击次数，
+#: 因此 ``MouseClick`` 里没有时长字段：按住多久对"点了多少下"没有意义，存下来只是
+#: 让聚合表多一列要维护。
+MOUSE_BUTTON_IDS: tuple[str, ...] = (
+    "mouse_left",
+    "mouse_right",
+    "mouse_middle",
+    "mouse_x1",
+    "mouse_x2",
+)
+
+
+@dataclass(frozen=True, slots=True)
+class MouseClick:
+    """一次鼠标按键**按下**。抬起不落盘——计数的事实发生在按下的那一刻。
+
+    与 :class:`KeyEvent` 共享归因口径（采集时刻解析 ``app_id``），但**不复用它的
+    存储路径**：键表按 ``key_id`` 建索引并被热力图、人体工学、回放、时间流逝逐条读取，
+    把鼠标塞进去会让每一处都要额外过滤一遍，而过滤漏掉一处就是"键盘热力图里出现一个
+    叫「鼠标左键」的键位"这种无法解释的画面。
+    """
+
+    button_id: str
+    ts_ns: int
+    app_id: int = UNKNOWN_APP_ID
+    confidence: Confidence = "unknown"
+    #: 平台原生按钮位，仅诊断用（与 ``KeyEvent.native_code`` 同一个角色）。
+    native_code: int | None = None
+
+    @property
+    def confidence_code(self) -> int:
+        return CONFIDENCE_CODES[self.confidence]
+
+
 @dataclass(frozen=True, slots=True)
 class UsageSession:
     """一段前台应用会话。``app_id`` 在前台线程上就已解析（02 文档 §4.2）。"""
@@ -120,9 +154,11 @@ __all__ = [
     "CONFIDENCE_CODES",
     "CONFIDENCE_NAMES",
     "CONTINUING_END_REASON",
+    "MOUSE_BUTTON_IDS",
     "Attribution",
     "Confidence",
     "EndReason",
     "KeyEvent",
+    "MouseClick",
     "UsageSession",
 ]

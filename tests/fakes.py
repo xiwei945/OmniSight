@@ -23,6 +23,7 @@ from omnisight.adapters.ports import (
     CaptureUnavailable,
     ForegroundInfo,
     RawKeyEvent,
+    RawMouseEvent,
 )
 
 #: 一个固定的、与真实时间无关的起点。带时区，避免 naive/aware 混用。
@@ -175,11 +176,61 @@ class FakeKeyboardSource:
         self.emit(key_id, pressed=False)
 
 
+class FakeMouseSource:
+    """由测试直接投递鼠标按下/抬起，时间戳取自注入的钟。"""
+
+    def __init__(self, clock: FakeClock | None = None, *, fail_on_start: bool = False,
+                 backend_name: str = "fake") -> None:
+        self._clock = clock or FakeClock()
+        self._sink: Callable[[RawMouseEvent], None] | None = None
+        self._fail_on_start = fail_on_start
+        self._backend_name = backend_name
+        self.running = False
+        self.unmapped_events = 0
+        self.stop_calls = 0
+
+    @property
+    def backend_name(self) -> str:
+        return self._backend_name
+
+    def start(self, sink: Callable[[RawMouseEvent], None]) -> None:
+        if self._fail_on_start:
+            raise CaptureUnavailable("模拟鼠标后端注册失败")
+        self._sink = sink
+        self.running = True
+
+    def stop(self) -> None:
+        self.stop_calls += 1
+        self.running = False
+        self._sink = None
+
+    # ── 测试驱动 ────────────────────────────────────────────────────────
+    def emit(self, button_id: str, *, pressed: bool, native_code: int | None = None) -> None:
+        if self._sink is None:
+            raise AssertionError("后端还没启动，不该有事件")
+        self._sink(
+            RawMouseEvent(
+                button_id=button_id,
+                pressed=pressed,
+                wall_ts_ns=self._clock.time_ns(),
+                mono_ts_ns=self._clock.monotonic_ns(),
+                native_code=native_code,
+            )
+        )
+
+    def click(self, button_id: str = "mouse_left", *, hold_ms: float = 60.0) -> None:
+        """一次完整点击：按下、时间流逝、抬起。"""
+        self.emit(button_id, pressed=True)
+        self._clock.advance(ms=hold_ms)
+        self.emit(button_id, pressed=False)
+
+
 __all__ = [
     "DEFAULT_START",
     "FakeClock",
     "FakeForegroundSource",
     "FakeIdleSource",
     "FakeKeyboardSource",
+    "FakeMouseSource",
     "identity",
 ]

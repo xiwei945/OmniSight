@@ -115,6 +115,14 @@ class OnboardingService:
                     "detail": "只有计数与时长的汇总，不含按键的先后顺序。",
                 }
             )
+        if caps.mouse:
+            items.append(
+                {
+                    "code": "mouse_counts",
+                    "text": "鼠标按键被点了多少次（左 / 右 / 中 / 侧键）",
+                    "detail": "只有计数与所属应用；光标位置、移动距离与滚轮都不记录。",
+                }
+            )
         if privacy.record_window_titles and caps.window_titles:
             items.append(
                 {
@@ -145,6 +153,9 @@ class OnboardingService:
             items.append({"code": "window_titles", "text": "窗口标题（网页标题、文件名）"})
         if not capture.store_raw_key_events:
             items.append({"code": "raw_key_events", "text": "按键的先后顺序与精确时间"})
+        if not self._ctx.capabilities.mouse:
+            items.append({"code": "mouse_counts", "text": "鼠标点击（当前环境未采集）"})
+        items.append({"code": "pointer", "text": "光标位置、鼠标移动距离与滚轮"})
         items.append({"code": "content", "text": "剪贴板、屏幕内容、文件内容"})
         items.append({"code": "network", "text": "任何形式的上传：无账号、不联网、无遥测"})
         return items

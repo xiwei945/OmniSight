@@ -4,7 +4,7 @@
  *
  *     ‹ [查看日期] › 今天        420px   .datebar
  *     每天│每周│每月│每年│总计    520px   .rangebar
- *     总览│应用│键盘│洞察         480px   .viewbar
+ *     总览│应用│键盘│鼠标│洞察    480px   .viewbar
  *     按下次数│累计时长│平均时长   300px   .metricbar（仅键盘视图）
  *
  * 宽度按路由切：总览/洞察 1080px（TimeLens），键盘/应用 1280px（KeyTrace 的机身

@@ -27,6 +27,7 @@ from .ports import (
     DegradedNotice,
     ForegroundInfo,
     RawKeyEvent,
+    RawMouseEvent,
     UnsupportedOperation,
 )
 
@@ -40,6 +41,7 @@ __all__ = [
     "ForegroundInfo",
     "Probe",
     "RawKeyEvent",
+    "RawMouseEvent",
     "UnsupportedOperation",
     "build",
     "detect",
@@ -167,6 +169,7 @@ def _degrade_to_fallback_keyboard(capabilities: Capabilities) -> Capabilities:
         detail=(
             "专用后端不可用，已改用通用兜底后端。按键总数仍然准确，"
             "但左右 Ctrl / Shift / Alt 会合并统计，且全屏独占程序内的按键可能收不到。"
+            "鼠标点击统计随专用后端一起不可用。"
         ),
         hint="重启程序可再次尝试专用后端",
     )
@@ -174,6 +177,10 @@ def _degrade_to_fallback_keyboard(capabilities: Capabilities) -> Capabilities:
         capabilities,
         keyboard_backend="pynput",
         key_position_stable=False,
+        # 专用后端注册不了时，鼠标那条注册同样会失败（同一个 API、同一个消息泵）。
+        # 与其让面板在启动后才变成一个错误块，不如在这里就如实说它不可用。
+        mouse=False,
+        mouse_backend="none",
         degraded=(*capabilities.degraded, notice),
     )
 
@@ -223,11 +230,23 @@ FOREGROUND_UNAVAILABLE = DegradedNotice(
     hint=None,
 )
 
+MOUSE_UNAVAILABLE = DegradedNotice(
+    code="mouse_unavailable",
+    severity="warning",
+    title="鼠标点击未被记录",
+    detail=(
+        "鼠标按键采集没能启动，本次运行不会记录任何点击。"
+        "键盘与屏幕时间统计不受影响，仍在正常记录。"
+    ),
+    hint="常见原因是安全软件拦截了 Raw Input 注册；重启程序可再试一次",
+)
+
 
 def reconcile(
     capabilities: Capabilities,
     *,
     keyboard: object | None = None,
+    mouse: object | None = None,
     foreground_running: bool = False,
     idle_available: bool = False,
     titles_recorded: bool = False,
@@ -242,6 +261,7 @@ def reconcile(
     """
     notices = list(capabilities.degraded)
     running = bool(keyboard is not None and getattr(keyboard, "running", False))
+    mouse_running = bool(mouse is not None and getattr(mouse, "running", False))
     changes: dict[str, object] = {}
 
     if not running:
@@ -261,6 +281,18 @@ def reconcile(
             # 用了兜底后端：位置码拿不到，左右修饰键与小键盘会合并。
             changes["key_position_stable"] = False
             _append(notices, _fallback_notice(capabilities.keyboard_backend, active))
+
+    if not mouse_running:
+        changes.update(mouse=False, mouse_backend="none")
+        # 只在"环境本来允许"时留说明：macOS / Linux 上根本没实现鼠标采集，
+        # 那不是一次失败，而是"这个平台还没有"——两者给用户看的东西不同。
+        if capabilities.mouse:
+            _append(notices, MOUSE_UNAVAILABLE)
+    else:
+        changes["mouse"] = True
+        changes["mouse_backend"] = str(
+            getattr(mouse, "backend_name", capabilities.mouse_backend)
+        )
 
     if not foreground_running:
         changes.update(foreground=False, window_titles=False)

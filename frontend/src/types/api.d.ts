@@ -275,6 +275,7 @@ export interface SessionsResponse extends Envelope {
 export interface Delta {
   seconds?: number;
   presses?: number;
+  clicks?: number;
   percent: number;
 }
 
@@ -574,6 +575,66 @@ export interface ErgonomicsResponse extends Envelope {
   modifier_ratio: ModifierRatio;
 }
 
+// ── 鼠标（05 文档 §4 的同构面板）──────────────────────────────────────
+
+/** 五个按键之一。**始终全部返回**（含 0 次），前端照着渲染五根条即可。 */
+export interface MouseButtonTally {
+  id: string;
+  label: string;
+  click_count: number;
+  percent: number;
+}
+
+/** `/mouse` 的应用排行一行。合并过的应用已由服务层折叠到根上。 */
+export interface MouseAppTally {
+  app_id: number;
+  display_name: string;
+  click_count: number;
+  percent: number;
+}
+
+export interface MouseHourBucket {
+  hour: number;
+  click_count: number;
+}
+
+export interface MouseDayBucket {
+  bucket: string;
+  label: string;
+  click_count: number;
+}
+
+/** 逐日（跨度大时逐月）的点击序列。`grain` 是 `day` 或 `month`。 */
+export interface MouseTimeline {
+  grain: string;
+  buckets: MouseDayBucket[];
+}
+
+export interface MouseTotals {
+  click_count: number;
+  active_days: number;
+  /** 日均点击数。分母是**周期天数**（含没点击的日子），不是活跃天数。 */
+  per_day: number;
+  /** `range=total` 时为 null，与总览的屏幕时间/按键同一条口径。 */
+  delta_vs_previous: Delta | null;
+}
+
+/** 键鼠比。`presses_per_click` 为 null 表示这段没有点击——不是 0。 */
+export interface MouseKeyboard {
+  press_count: number;
+  presses_per_click: number | null;
+}
+
+export interface MouseResponse extends Envelope {
+  scope: Scope;
+  buttons: MouseButtonTally[];
+  apps: MouseAppTally[];
+  hours: MouseHourBucket[];
+  days: MouseTimeline;
+  totals: MouseTotals;
+  keyboard: MouseKeyboard;
+}
+
 // ── 洞察（05 文档 §5）─────────────────────────────────────────────────
 
 /** `/insights/app-keyboard` 的一行。比 AppUsageRow 多键盘画像，少图标与会话。 */
@@ -687,6 +748,8 @@ export interface Capabilities {
   keyboard: boolean;
   keyboard_backend: string;
   keyboard_durations: boolean;
+  mouse: boolean;
+  mouse_backend: string;
   key_position_stable: boolean;
   foreground: boolean;
   window_titles: boolean;
@@ -721,6 +784,7 @@ export interface WriterState {
 export interface CaptureState {
   paused: boolean;
   keyboard: BackendState;
+  mouse: BackendState;
   foreground: BackendState;
   writer: WriterState;
   queue_depth: number;
@@ -1068,6 +1132,7 @@ export interface DataMap {
   heatmap: HeatmapResponse;
   timeline: KeyboardTimelineResponse;
   ergonomics: ErgonomicsResponse;
+  mouse: MouseResponse;
   keyDetail: KeyDetailResponse;
   insightOverview: OverviewResponse;
   insightKeyboard: AppKeyboardResponse;

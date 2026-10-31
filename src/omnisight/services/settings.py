@@ -496,7 +496,11 @@ class SettingsService:
         capture = self._ctx.capture
         if capture is None:
             return {"paused": paused, "effective": False}
-        for component in (getattr(capture, "keyboard", None), getattr(capture, "foreground", None)):
+        for component in (
+            getattr(capture, "keyboard", None),
+            getattr(capture, "mouse", None),
+            getattr(capture, "foreground", None),
+        ):
             if component is None:
                 continue
             component.pause() if paused else component.resume()

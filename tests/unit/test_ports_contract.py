@@ -37,6 +37,7 @@ REQUIRED_METHODS: dict[type, tuple[str, ...]] = {
     ports.InstanceLock: ("acquire", "notify_existing", "release"),
     ports.ForegroundSource: ("current", "list_running"),
     ports.KeyboardSource: ("start", "stop", "running", "backend_name", "needs_main_loop"),
+    ports.MouseSource: ("start", "stop", "running", "backend_name"),
     ports.IdleSource: ("idle_seconds",),
     ports.IconSource: ("icon_png",),
     ports.AutostartControl: ("is_enabled", "set_enabled"),

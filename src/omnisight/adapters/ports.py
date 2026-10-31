@@ -90,6 +90,24 @@ class RawKeyEvent:
 
 
 @dataclass(frozen=True, slots=True)
+class RawMouseEvent:
+    """已归一化到 ``button_id`` 的单次鼠标按键按下或抬起。
+
+    **只有按键，没有坐标、没有滚轮、没有移动距离**：这一版统计的是"点了多少次"，
+    光标轨迹不在采集范围内（鼠标统计的隐私口径见 README 的「隐私」一节）。
+    左/右/中/侧键各是一个 ``button_id``，语义与 ``key_id`` 同源——核心层不认识
+    ``RI_MOUSE_*`` 这类平台常量。
+    """
+
+    button_id: str
+    pressed: bool
+    wall_ts_ns: int
+    mono_ts_ns: int
+    #: 平台原生按钮位（Windows 的 ``usButtonFlags``）。仅诊断用。
+    native_code: int | None = None
+
+
+@dataclass(frozen=True, slots=True)
 class DegradedNotice:
     """一条对用户可见的能力缺失说明（05 文档 §7）。
 
@@ -114,6 +132,10 @@ class Capabilities:
     keyboard: bool = False
     keyboard_backend: str = "none"
     keyboard_durations: bool = False
+    #: 鼠标按键（左/右/中/侧键）能否被采集。**与键盘独立**：鼠标后端注册失败不该
+    #: 把键盘一起标成不可用，反之亦然（10 文档 §6 的失败隔离原则）。
+    mouse: bool = False
+    mouse_backend: str = "none"
     #: 本平台**实际接受**的 ``keyboard_backend`` 取值。与 :attr:`keyboard_backend`
     #: （此刻在用的那一个）是两件事：``config.KEYBOARD_BACKENDS`` 是跨平台并集，
     #: 为了让同一份配置文件能在两个平台间可携；而"选了必然失败"的值不该出现在任何
@@ -143,6 +165,8 @@ class Capabilities:
             "keyboard": self.keyboard,
             "keyboard_backend": self.keyboard_backend,
             "keyboard_durations": self.keyboard_durations,
+            "mouse": self.mouse,
+            "mouse_backend": self.mouse_backend,
             "key_position_stable": self.key_position_stable,
             "foreground": self.foreground,
             "window_titles": self.window_titles,
@@ -198,6 +222,27 @@ class KeyboardSource(Protocol):
         §3）——不需要主循环的后端（Windows 的 Raw Input 自带消息泵）不实现它也
         不会被碰到，因此它不在端口契约测试的无条件调用清单里。
         """
+
+
+@runtime_checkable
+class MouseSource(Protocol):
+    """投递全局鼠标按键事件。
+
+    比 :class:`KeyboardSource` 少两样东西：没有 ``needs_main_loop``（鼠标不参与主
+    线程分派），也没有时长语义——这一版只统计点击次数。回调线程的归属同样不作
+    承诺，采集层只做纯内存操作（见 ``capture/mouse.py``）。
+    """
+
+    def start(self, sink: Callable[[RawMouseEvent], None]) -> None:
+        """开始投递。失败时抛 :class:`CaptureUnavailable`。"""
+
+    def stop(self) -> None: ...
+
+    @property
+    def running(self) -> bool: ...
+
+    @property
+    def backend_name(self) -> str: ...
 
 
 @runtime_checkable
@@ -325,6 +370,7 @@ class AdapterSet:
     elevation: ElevationControl | None = None
     foreground: ForegroundSource | None = None
     keyboard: KeyboardSource | None = None
+    mouse: MouseSource | None = None
     idle: IdleSource | None = None
     icons: IconSource | None = None
     # 历史备注：这里曾有 ``tray_factory`` 与 ``extra`` 两个预留字段，全仓无人读取

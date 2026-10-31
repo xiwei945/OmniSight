@@ -93,7 +93,7 @@ def build_parser() -> argparse.ArgumentParser:
     )
     parser.add_argument(
         "--view", action="append", default=[],
-        help="overview / apps / keyboard / insights，可重复",
+        help="overview / apps / keyboard / mouse / insights，可重复",
     )
     parser.add_argument(
         "--width", action="append", default=[], help="视口宽度，可重复（默认 1440）"

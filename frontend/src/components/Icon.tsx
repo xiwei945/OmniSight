@@ -31,6 +31,7 @@ import {
   LayoutGrid,
   Monitor,
   Moon,
+  Mouse,
   Pause,
   Search,
   Settings,
@@ -64,6 +65,8 @@ const ICONS = {
   down: ChevronDown,
   info: Info,
   keyboard: Keyboard,
+  // 鼠标视图的空态（"这段时间没有记录到点击"）与它自己的身份。
+  mouse: Mouse,
   apps: LayoutGrid,
   insights: ChartColumn,
   overview: House,

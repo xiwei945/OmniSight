@@ -9,7 +9,7 @@
 // 要不要产生历史条目"变成它的配置问题，而那是本项目里真正需要精确控制的一处。
 import { getState, setState, subscribe } from './store.ts';
 
-export const ROUTES = ['overview', 'apps', 'keyboard', 'insights'] as const;
+export const ROUTES = ['overview', 'apps', 'keyboard', 'mouse', 'insights'] as const;
 export type Route = (typeof ROUTES)[number];
 
 const DEFAULT_ROUTE: Route = 'overview';

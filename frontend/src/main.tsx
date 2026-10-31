@@ -52,6 +52,7 @@ const VIEW_MODULES: Record<string, () => Promise<ViewModule>> = {
   overview: () => import('./views/overview.tsx'),
   apps: () => import('./views/apps.tsx'),
   keyboard: () => import('./views/keyboard.tsx'),
+  mouse: () => import('./views/mouse.tsx'),
   insights: () => import('./views/insights.tsx'),
 };
 
@@ -138,7 +139,7 @@ function installShortcuts(): void {
     if (event.metaKey || event.ctrlKey || event.altKey) return;
     const tag = ((event.target as Element | null)?.tagName || '').toLowerCase();
     if (tag === 'input' || tag === 'select' || tag === 'textarea') return;
-    const index = ['1', '2', '3', '4'].indexOf(event.key);
+    const index = ['1', '2', '3', '4', '5'].indexOf(event.key);
     if (index >= 0) {
       go(ROUTES[index]);
       return;
@@ -160,7 +161,7 @@ function showShortcutHelp(): void {
   showTooltip({
     title: '键盘快捷键',
     rows: [
-      ['1 - 4', '切换视图'],
+      ['1 - 5', '切换视图'],
       ['左 / 右', '上一个 / 下一个周期'],
       ['T', '回到今天'],
       ['/', '聚焦搜索'],

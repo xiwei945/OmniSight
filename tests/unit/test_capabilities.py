@@ -133,15 +133,40 @@ def test_reconcile_reports_the_backend_that_actually_started():
     effective = adapters.reconcile(
         caps,
         keyboard=_FakeBackend(True, "raw_input"),
+        mouse=_FakeBackend(True, "raw_input"),
         foreground_running=True,
         idle_available=True,
         titles_recorded=False,
     )
     assert effective.keyboard is True
     assert effective.keyboard_backend == "raw_input"
+    assert effective.mouse is True
+    assert effective.mouse_backend == "raw_input"
     assert effective.key_position_stable is True
     assert effective.window_titles is False, "能力允许但用户没开启 → 这一位是假"
     assert effective.degraded == caps.degraded
+
+
+def test_reconcile_marks_mouse_unavailable_independently_of_keyboard():
+    """鼠标起不来只该关掉鼠标：键盘与屏幕时间照常，且要留下用户看得懂的说明。"""
+    caps = adapters.detect(adapters.Probe(platform="win32"))
+    effective = adapters.reconcile(
+        caps, keyboard=_FakeBackend(True), mouse=None, foreground_running=True
+    )
+    assert effective.keyboard is True
+    assert effective.mouse is False
+    assert effective.mouse_backend == "none"
+    assert adapters.MOUSE_UNAVAILABLE.code in {notice.code for notice in effective.degraded}
+
+
+def test_reconcile_does_not_call_a_missing_platform_backend_a_failure():
+    """macOS / Linux 还没实现鼠标采集：那是"这个平台没有"，不是一次启动失败。"""
+    caps = Capabilities(platform_id="macos", tier=1, keyboard=True, foreground=True, mouse=False)
+    effective = adapters.reconcile(
+        caps, keyboard=_FakeBackend(True), mouse=None, foreground_running=True
+    )
+    assert effective.mouse is False
+    assert all(notice.code != adapters.MOUSE_UNAVAILABLE.code for notice in effective.degraded)
 
 
 def test_reconcile_marks_keyboard_unavailable_when_the_backend_did_not_start():

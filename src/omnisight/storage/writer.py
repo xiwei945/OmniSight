@@ -24,7 +24,7 @@ from dataclasses import dataclass, field
 from datetime import datetime, timedelta, tzinfo
 from sqlite3 import Connection
 
-from ..capture.models import KeyEvent, UsageSession
+from ..capture.models import KeyEvent, MouseClick, UsageSession
 from ..capture.queue import Event, EventQueue
 from ..core.bus import EventBus
 from ..core.clock import Clock, SystemClock
@@ -121,6 +121,43 @@ INSERT INTO agg_press_minute (day_bucket, minute, press_count)
 VALUES (?, ?, ?)
 ON CONFLICT(day_bucket, minute) DO UPDATE SET
     press_count = agg_press_minute.press_count + excluded.press_count
+"""
+
+#: 鼠标点击的五条 upsert。**没有时长列**：这一版只统计次数，按住多久不落库
+#: （见 capture.models.MouseClick）。
+AGG_MOUSE_BUTTON_DAY_UPSERT = """
+INSERT INTO agg_mouse_button_day (day_bucket, button_id, click_count)
+VALUES (?, ?, ?)
+ON CONFLICT(day_bucket, button_id) DO UPDATE SET
+    click_count = agg_mouse_button_day.click_count + excluded.click_count
+"""
+
+AGG_MOUSE_BUTTON_TOTAL_UPSERT = """
+INSERT INTO agg_mouse_button_total (button_id, click_count)
+VALUES (?, ?)
+ON CONFLICT(button_id) DO UPDATE SET
+    click_count = agg_mouse_button_total.click_count + excluded.click_count
+"""
+
+AGG_MOUSE_APP_DAY_UPSERT = """
+INSERT INTO agg_mouse_app_day (day_bucket, app_id, button_id, click_count)
+VALUES (?, ?, ?, ?)
+ON CONFLICT(day_bucket, app_id, button_id) DO UPDATE SET
+    click_count = agg_mouse_app_day.click_count + excluded.click_count
+"""
+
+AGG_MOUSE_APP_TOTAL_UPSERT = """
+INSERT INTO agg_mouse_app_total (app_id, button_id, click_count)
+VALUES (?, ?, ?)
+ON CONFLICT(app_id, button_id) DO UPDATE SET
+    click_count = agg_mouse_app_total.click_count + excluded.click_count
+"""
+
+AGG_MOUSE_HOUR_UPSERT = """
+INSERT INTO agg_mouse_hour (day_bucket, hour, click_count)
+VALUES (?, ?, ?)
+ON CONFLICT(day_bucket, hour) DO UPDATE SET
+    click_count = agg_mouse_hour.click_count + excluded.click_count
 """
 
 _AGG_APP_BUCKET_UPSERT = """
@@ -221,6 +258,7 @@ class WriterStats:
     batches: int = 0
     key_events: int = 0
     sessions: int = 0
+    mouse_clicks: int = 0
     write_errors: int = 0
     abandoned_batches: int = 0
     last_flush_at: str | None = None
@@ -230,6 +268,7 @@ class WriterStats:
             "batches": self.batches,
             "key_events": self.key_events,
             "sessions": self.sessions,
+            "mouse_clicks": self.mouse_clicks,
             "write_errors": self.write_errors,
             "abandoned_batches": self.abandoned_batches,
             "last_flush_at": self.last_flush_at,
@@ -259,13 +298,21 @@ class _Rollup:
     app_hour: dict[tuple[str, int, int], int] = field(default_factory=dict)
     press_hour: dict[tuple[str, int], list[float]] = field(default_factory=dict)
     press_minute: dict[tuple[str, int], int] = field(default_factory=dict)
+    #: 鼠标：``(日, 按键) → 次数``、``按键 → 次数``、``(日, 应用, 按键) → 次数``、
+    #: ``(应用, 按键) → 次数``、``(日, 小时) → 次数``。整数而不是列表：这里没有时长。
+    mouse_day: dict[tuple[str, str], int] = field(default_factory=dict)
+    mouse_total: dict[str, int] = field(default_factory=dict)
+    mouse_app_day: dict[tuple[str, int, str], int] = field(default_factory=dict)
+    mouse_app_total: dict[tuple[int, str], int] = field(default_factory=dict)
+    mouse_hour: dict[tuple[str, int], int] = field(default_factory=dict)
     touched_apps: set[int] = field(default_factory=set)
     key_count: int = 0
     session_count: int = 0
+    mouse_count: int = 0
 
     @property
     def empty(self) -> bool:
-        return self.key_count == 0 and self.session_count == 0
+        return self.key_count == 0 and self.session_count == 0 and self.mouse_count == 0
 
 
 def _accumulate(target: dict, key, count: float, total: float, maximum: float) -> None:
@@ -481,6 +528,7 @@ class StorageWriter:
         self.stats.batches += 1
         self.stats.key_events += rollup.key_count
         self.stats.sessions += rollup.session_count
+        self.stats.mouse_clicks += rollup.mouse_count
         self.stats.last_flush_at = now.isoformat(timespec="seconds")
         # 广播放在事务**之外**：订阅者（SSE）收到通知后会立刻去查库，而事务还没提交时
         # 它查到的是旧数据——"通知到了但数据还没到"比晚 1 毫秒通知糟得多。
@@ -603,6 +651,34 @@ class StorageWriter:
             [(day, minute, count) for (day, minute), count in rollup.press_minute.items()],
         )
 
+        _executemany(
+            conn,
+            AGG_MOUSE_BUTTON_DAY_UPSERT,
+            [(day, button, count) for (day, button), count in rollup.mouse_day.items()],
+        )
+        _executemany(
+            conn,
+            AGG_MOUSE_BUTTON_TOTAL_UPSERT,
+            [(button, count) for button, count in rollup.mouse_total.items()],
+        )
+        _executemany(
+            conn,
+            AGG_MOUSE_APP_DAY_UPSERT,
+            [(day, app_id, button, count)
+             for (day, app_id, button), count in rollup.mouse_app_day.items()],
+        )
+        _executemany(
+            conn,
+            AGG_MOUSE_APP_TOTAL_UPSERT,
+            [(app_id, button, count)
+             for (app_id, button), count in rollup.mouse_app_total.items()],
+        )
+        _executemany(
+            conn,
+            AGG_MOUSE_HOUR_UPSERT,
+            [(day, hour, count) for (day, hour), count in rollup.mouse_hour.items()],
+        )
+
         if self._registry is not None and rollup.touched_apps:
             AppRegistry.touch(conn, rollup.touched_apps, now)
 
@@ -638,9 +714,38 @@ class StorageWriter:
         for event in batch:
             if isinstance(event, KeyEvent):
                 self._fold_key_event(rollup, event, tz)
+            elif isinstance(event, MouseClick):
+                self._fold_mouse_click(rollup, event, tz)
             elif isinstance(event, UsageSession):
                 self._fold_session(rollup, event, tz)
         return rollup
+
+    def _fold_mouse_click(
+        self, rollup: _Rollup, event: MouseClick, tz: tzinfo | None
+    ) -> None:
+        """一次点击只碰五个 ``dict``：与按键那一路同源，只是没有时长与原始表。
+
+        **鼠标不写原始事件表**。一次点击本来就只是一条事实，回放与时间流逝也都只服务
+        键盘；为它再开一套按月分表意味着重度用户一天几千行，而收益是零。
+        """
+        moment = datetime.fromtimestamp(event.ts_ns / 1_000_000_000, tz=tz)
+        day = moment.strftime("%Y-%m-%d")
+        hour = moment.hour
+        button_id = event.button_id
+        app_id = event.app_id
+
+        rollup.mouse_count += 1
+        for target, key in (
+            (rollup.mouse_day, (day, button_id)),
+            (rollup.mouse_total, button_id),
+            (rollup.mouse_app_day, (day, app_id, button_id)),
+            (rollup.mouse_app_total, (app_id, button_id)),
+            (rollup.mouse_hour, (day, hour)),
+        ):
+            target[key] = target.get(key, 0) + 1
+        # 哨兵 app_id = 0 也要写：鼠标总数必须与应用维度对得上账（与键盘同一条）。
+        if app_id != UNKNOWN_APP_ID:
+            rollup.touched_apps.add(app_id)
 
     def _fold_key_event(self, rollup: _Rollup, event: KeyEvent, tz: tzinfo | None) -> None:
         moment = datetime.fromtimestamp(event.down_ts_ns / 1_000_000_000, tz=tz)

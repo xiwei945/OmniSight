@@ -15,7 +15,9 @@ from __future__ import annotations
 
 import re
 
-SCHEMA_VERSION = 2
+#: 与本文件的 DDL 对应的 schema 版本。**版本推进的真源是 ``migrations.TARGET_VERSION``**
+#: （迁移执行器只认那一个）；这里跟着改是为了让"读 DDL 的人"不必再翻一次迁移表。
+SCHEMA_VERSION = 4
 
 #: 未知前台（空闲、锁屏、被排除的应用）的哨兵应用。
 #:
@@ -258,6 +260,56 @@ CREATE TABLE IF NOT EXISTS agg_app_key_total (
 ) WITHOUT ROWID
 """
 
+#: 鼠标点击的聚合表。**与键表分开**，不把 ``mouse_left`` 之类的 id 混进 ``agg_key_*``：
+#: 键盘那几张表会被热力图、人体工学、回放、时间流逝逐条读取，塞进去等于让每一处都要
+#: 额外过滤一遍，而漏掉一处就会在热力图上凭空出现一个"鼠标左键"键位。
+#:
+#: 只有**计数**，没有时长：按住多久对"点了多少次"没有意义（见 ``capture.models.MouseClick``）。
+#: 与键表一样，日期桶在写入时算好，查询期不碰 ``strftime``。
+AGG_MOUSE_BUTTON_DAY_DDL = """
+CREATE TABLE IF NOT EXISTS agg_mouse_button_day (
+    day_bucket  TEXT    NOT NULL,
+    button_id   TEXT    NOT NULL,
+    click_count INTEGER NOT NULL DEFAULT 0,
+    PRIMARY KEY (day_bucket, button_id)
+) WITHOUT ROWID
+"""
+
+AGG_MOUSE_BUTTON_TOTAL_DDL = """
+CREATE TABLE IF NOT EXISTS agg_mouse_button_total (
+    button_id   TEXT PRIMARY KEY,
+    click_count INTEGER NOT NULL DEFAULT 0
+) WITHOUT ROWID
+"""
+
+AGG_MOUSE_APP_DAY_DDL = """
+CREATE TABLE IF NOT EXISTS agg_mouse_app_day (
+    day_bucket  TEXT    NOT NULL,
+    app_id      INTEGER NOT NULL,
+    button_id   TEXT    NOT NULL,
+    click_count INTEGER NOT NULL DEFAULT 0,
+    PRIMARY KEY (day_bucket, app_id, button_id)
+) WITHOUT ROWID
+"""
+
+AGG_MOUSE_APP_TOTAL_DDL = """
+CREATE TABLE IF NOT EXISTS agg_mouse_app_total (
+    app_id      INTEGER NOT NULL,
+    button_id   TEXT    NOT NULL,
+    click_count INTEGER NOT NULL DEFAULT 0,
+    PRIMARY KEY (app_id, button_id)
+) WITHOUT ROWID
+"""
+
+AGG_MOUSE_HOUR_DDL = """
+CREATE TABLE IF NOT EXISTS agg_mouse_hour (
+    day_bucket  TEXT    NOT NULL,
+    hour        INTEGER NOT NULL,
+    click_count INTEGER NOT NULL DEFAULT 0,
+    PRIMARY KEY (day_bucket, hour)
+) WITHOUT ROWID
+"""
+
 ARCHIVE_LOG_DDL = """
 CREATE TABLE IF NOT EXISTS archive_log (
     id         INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -314,6 +366,12 @@ INDEXES: tuple[str, ...] = (
     "(key_id, day_bucket, hour, press_count, duration_total_ms)",
     "CREATE INDEX IF NOT EXISTS idx_agg_kad_key ON agg_key_app_day"
     "(key_id, day_bucket, app_id, press_count, duration_total_ms)",
+    # 鼠标的两条反向索引，形状与上面两条同源：主键把日期放最前（写入顺序追加），
+    # 而"某个应用这段时间点了多少"与"右键主要点在哪些应用里"要按键/应用先定位。
+    "CREATE INDEX IF NOT EXISTS idx_agg_mouse_app ON agg_mouse_app_day"
+    "(app_id, day_bucket, button_id, click_count)",
+    "CREATE INDEX IF NOT EXISTS idx_agg_mouse_button ON agg_mouse_app_day"
+    "(button_id, day_bucket, app_id, click_count)",
 )
 
 def _agg_app_day_ddl() -> str:
@@ -342,6 +400,11 @@ TABLES: tuple[str, ...] = (
     AGG_KEY_HOUR_DDL,
     AGG_KEY_APP_DAY_DDL,
     AGG_APP_KEY_TOTAL_DDL,
+    AGG_MOUSE_BUTTON_DAY_DDL,
+    AGG_MOUSE_BUTTON_TOTAL_DDL,
+    AGG_MOUSE_APP_DAY_DDL,
+    AGG_MOUSE_APP_TOTAL_DDL,
+    AGG_MOUSE_HOUR_DDL,
     AGG_PRESS_HOUR_DDL,
     AGG_PRESS_MINUTE_DDL,
     APP_ICON_DDL,
@@ -368,6 +431,11 @@ EXPECTED_TABLES: frozenset[str] = frozenset(
         "agg_key_hour",
         "agg_key_app_day",
         "agg_app_key_total",
+        "agg_mouse_button_day",
+        "agg_mouse_button_total",
+        "agg_mouse_app_day",
+        "agg_mouse_app_total",
+        "agg_mouse_hour",
         "agg_press_hour",
         "agg_press_minute",
         "app_icon",

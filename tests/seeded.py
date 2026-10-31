@@ -15,7 +15,7 @@ from datetime import date, datetime, timedelta
 from zoneinfo import ZoneInfo
 
 from omnisight.adapters.ports import AppIdentity
-from omnisight.capture.models import KeyEvent, UsageSession
+from omnisight.capture.models import KeyEvent, MouseClick, UsageSession
 from omnisight.capture.queue import EventQueue
 from omnisight.storage import capability as capability_table
 from omnisight.storage.database import Database
@@ -114,6 +114,35 @@ PLAN: tuple[tuple[str, int, int, str | None, int, tuple[tuple[str, int], ...], b
 )
 
 
+#: 鼠标点击：``(day, hour, minute, app, button, 次数)``。与 ``PLAN`` 分开，因为鼠标
+#: 没有会话与时长——把它挤进那个七元组会让每条键盘规划都要多写一个用不上的字段。
+#:
+#: 数字刻意让各周期互不相同（与 ``PLAN`` 同一个理由）：日 8、周 14、月 10、年 17、
+#: 全部 21。左键 19、右键 2、中键与侧键 0。
+MOUSE_PLAN: tuple[tuple[str, int, int, str | None, str, int], ...] = (
+    ("2026-09-02", 10, 0, "code.exe", "mouse_left", 5),
+    ("2026-09-02", 10, 0, "code.exe", "mouse_right", 1),
+    ("2026-09-02", 11, 0, "chrome.exe", "mouse_left", 2),
+    ("2026-09-01", 9, 0, "code.exe", "mouse_left", 2),
+    # 本周之内但上个月——用来区分 week 与 month。
+    ("2026-08-31", 14, 0, "chrome.exe", "mouse_left", 3),
+    ("2026-08-31", 14, 0, "chrome.exe", "mouse_right", 1),
+    # 前台探测不可用的那一天：有点击、没有应用。
+    (BLIND_DAY, 15, 0, None, "mouse_left", 3),
+    # 去年：只有 total 才看得到。
+    ("2025-12-15", 20, 0, "chrome.exe", "mouse_left", 4),
+)
+
+#: 各周期的点击总数。**手算出来写在这里**，理由同 ``EXPECTED``。
+EXPECTED_MOUSE: dict[str, int] = {
+    "day": 8,
+    "week": 14,
+    "month": 10,
+    "year": 17,
+    "total": 21,
+}
+
+
 def seed(db: Database, *, store_raw: bool = True) -> Seeded:
     """把 :data:`PLAN` 写进库。返回 :class:`Seeded`。"""
     queue = EventQueue()
@@ -171,6 +200,19 @@ def seed(db: Database, *, store_raw: bool = True) -> Seeded:
                     visit_start_ts_ns=start,
                 )
             )
+
+    for day, hour, minute, app_key, button_id, count in MOUSE_PLAN:
+        app_id = result.app_ids[app_key] if app_key else 0
+        start = _at(day, hour, minute)
+        for index in range(count):
+            queue.put(
+                MouseClick(
+                    button_id=button_id,
+                    ts_ns=start + index * 1_000_000_000,
+                    app_id=app_id,
+                    confidence="high",
+                )
+            )
     while queue.depth:
         writer.flush_once()
     return result
@@ -179,6 +221,8 @@ def seed(db: Database, *, store_raw: bool = True) -> Seeded:
 __all__ = [
     "BLIND_DAY",
     "EXPECTED",
+    "EXPECTED_MOUSE",
+    "MOUSE_PLAN",
     "NOW",
     "PLAN",
     "SECRET_TITLE",

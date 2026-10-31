@@ -26,6 +26,7 @@ from .export import ExportService
 from .insights import InsightService
 from .keyboard import KeyboardService
 from .legacy import LegacyService
+from .mouse import MouseService
 from .onboarding import OnboardingService
 from .period import Period
 from .settings import SettingsService
@@ -62,6 +63,7 @@ class Services:
     apps: AppService
     usage: UsageService
     keyboard: KeyboardService
+    mouse: MouseService
     insights: InsightService
     settings: SettingsService
     export: ExportService
@@ -96,6 +98,7 @@ class Services:
         apps = AppService(context)
         usage = UsageService(context, apps)
         keyboard = KeyboardService(context, apps)
+        mouse = MouseService(context, apps)
         insights = InsightService(context, apps, usage, keyboard)
         settings = SettingsService(context, config_path=config_path, on_change=on_config_change)
         export = ExportService(context, usage, keyboard)
@@ -115,6 +118,7 @@ class Services:
             apps=apps,
             usage=usage,
             keyboard=keyboard,
+            mouse=mouse,
             insights=insights,
             settings=settings,
             export=export,
@@ -338,6 +342,7 @@ __all__ = [
     "InsightService",
     "KeyboardService",
     "LegacyService",
+    "MouseService",
     "OnboardingService",
     "ServiceContext",
     "Services",

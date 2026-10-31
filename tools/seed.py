@@ -37,7 +37,7 @@ if str(ROOT / "src") not in sys.path:
 
 from omnisight.adapters.ports import AppIdentity  # noqa: E402
 from omnisight.capture.keymap import KEY_IDS  # noqa: E402
-from omnisight.capture.models import KeyEvent, UsageSession  # noqa: E402
+from omnisight.capture.models import KeyEvent, MouseClick, UsageSession  # noqa: E402
 from omnisight.capture.queue import EventQueue  # noqa: E402
 from omnisight.storage import capability as capability_table  # noqa: E402
 from omnisight.storage.database import Database  # noqa: E402
@@ -99,6 +99,33 @@ COLD_KEY_WEIGHT = 0.6
 #: 观测量级一致；不乘的话一天能造出 5 万次，热力图与 KPM 都会失真到没有验收价值。
 TYPING_DUTY = 0.14
 
+#: 鼠标点击强度：每分钟多少次、以及五个键的比例。
+#:
+#: 数值来源是"一天 8 小时前台、约 2000–4000 次点击"这个量级——浏览器的点击远多于
+#: 编辑器，因此按应用再乘一个系数（见 :data:`APP_CLICK_FACTOR`）。只有次数，没有
+#: 时长与坐标（见 ``capture/models.py`` 的 ``MouseClick``）。
+CLICK_RATE_PER_MINUTE = 9.0
+CLICK_DUTY = 0.55
+BUTTON_WEIGHTS: tuple[tuple[str, float], ...] = (
+    ("mouse_left", 86.0),
+    ("mouse_right", 9.0),
+    ("mouse_middle", 3.0),
+    ("mouse_x1", 1.0),
+    ("mouse_x2", 1.0),
+)
+#: 按应用的点击倾向。浏览器/资源管理器点得多，终端与播放器点得少。
+APP_CLICK_FACTOR: dict[str, float] = {
+    "chrome.exe": 1.8,
+    "explorer.exe": 1.5,
+    "excel.exe": 1.2,
+    "winword.exe": 1.1,
+    "wechat.exe": 1.2,
+    "code.exe": 0.8,
+    "pycharm64.exe": 0.7,
+    "windowsterminal.exe": 0.35,
+    "spotify.exe": 0.4,
+}
+
 
 def _key_population() -> tuple[list[str], list[float]]:
     """全部键位 + 权重。冷键也给非零权重，见 :data:`COLD_KEY_WEIGHT`。"""
@@ -119,13 +146,15 @@ class SeedReport:
     days: int
     presses: int
     visits: int
+    clicks: int
     seconds: float
     db_bytes: int
 
     def render(self) -> str:
-        rate = self.presses / self.seconds if self.seconds else 0
+        rate = (self.presses + self.clicks) / self.seconds if self.seconds else 0
         return (
-            f"{self.days} 天 / {self.presses:,} 次按键 / {self.visits:,} 次访问，"
+            f"{self.days} 天 / {self.presses:,} 次按键 / {self.clicks:,} 次点击 / "
+            f"{self.visits:,} 次访问，"
             f"耗时 {self.seconds:.1f}s（{rate:,.0f} 事件/秒），"
             f"库大小 {self.db_bytes / 1_048_576:.1f} MiB"
         )
@@ -173,7 +202,7 @@ def seed(
 
     skipped = set(rng.sample(range(days), min(gap_days, days))) if gap_days else set()
     started = time.perf_counter()
-    presses = visits = 0
+    presses = visits = clicks = 0
     for offset in range(days):
         day = end - timedelta(days=days - 1 - offset)
         if offset in skipped:
@@ -190,7 +219,7 @@ def seed(
                 key_position_stable=True,
                 now=datetime.combine(day, datetime.min.time(), tzinfo=tz),
             )
-        day_presses, day_visits = _seed_day(
+        day_presses, day_visits, day_clicks = _seed_day(
             day, tz=tz, rng=rng, queue=queue, writer=writer, app_ids=app_ids,
             keys=keys, weights=weights, weight_total=weight_total,
             foreground=foreground, heartbeat_seconds=heartbeat_seconds,
@@ -198,13 +227,14 @@ def seed(
         )
         presses += day_presses
         visits += day_visits
+        clicks += day_clicks
         if progress and (offset + 1) % 100 == 0:
             print(f"  … {offset + 1}/{days} 天", flush=True)
     while queue.depth:
         writer.flush_once()
     db.checkpoint("TRUNCATE")
     return SeedReport(
-        days=days - len(skipped), presses=presses, visits=visits,
+        days=days - len(skipped), presses=presses, visits=visits, clicks=clicks,
         seconds=time.perf_counter() - started,
         db_bytes=db.path.stat().st_size if db.path.exists() else 0,
     )
@@ -225,8 +255,8 @@ def _seed_day(
     heartbeat_seconds: float,
     intensity: float,
     titles: bool,
-) -> tuple[int, int]:
-    presses = visits = 0
+) -> tuple[int, int, int]:
+    presses = visits = clicks = 0
     weekend = day.weekday() >= 5
     for start_hour, end_hour, chance in WINDOWS:
         if rng.random() > (chance * (0.5 if weekend else 1.0)):
@@ -246,6 +276,10 @@ def _seed_day(
                 app_id=app_id, start=cursor, end=visit_end,
                 kpm=profile.kpm * intensity,
             )
+            clicks += _emit_clicks(
+                queue=queue, writer=writer, rng=rng, app_id=app_id,
+                start=cursor, end=visit_end, factor=APP_CLICK_FACTOR.get(profile.process, 1.0),
+            )
             visits += _emit_visit(
                 queue=queue, writer=writer, app_id=app_id, start=cursor, end=visit_end,
                 heartbeat_seconds=heartbeat_seconds,
@@ -253,7 +287,7 @@ def _seed_day(
             )
             # 切窗之间留一点空隙：连续访问首尾相接会让"切换次数"与真实差得太远。
             cursor = visit_end + timedelta(seconds=rng.uniform(0.5, 20))
-    return presses, visits
+    return presses, visits, clicks
 
 
 def _pick_app(rng: random.Random, weight_total: float) -> AppProfile:
@@ -304,8 +338,46 @@ def _emit_keys(
     return count
 
 
-def _emit_visit(
+def _emit_clicks(
     *,
+    queue: EventQueue,
+    writer: StorageWriter,
+    rng: random.Random,
+    app_id: int,
+    start: datetime,
+    end: datetime,
+    factor: float = 1.0,
+) -> int:
+    """在 ``[start, end)`` 内按点击速率撒点击。返回条数。
+
+    只有按下（``MouseClick`` 本来就是"一次点击=一次按下"），没有抬起、没有坐标。
+    """
+    seconds = (end - start).total_seconds()
+    count = int(
+        seconds / 60 * CLICK_RATE_PER_MINUTE * CLICK_DUTY * factor * rng.uniform(0.6, 1.4)
+    )
+    if count <= 0:
+        return 0
+    base_ns = int(start.timestamp() * 1_000_000_000)
+    span_ns = max(int(seconds * 1_000_000_000), 1)
+    buttons = [button for button, _weight in BUTTON_WEIGHTS]
+    weights = [weight for _button, weight in BUTTON_WEIGHTS]
+    picks = rng.choices(buttons, weights=weights, k=count)
+    offsets = sorted(rng.randrange(span_ns) for _ in range(count))
+    for button_id, offset in zip(picks, offsets, strict=True):
+        queue.put(
+            MouseClick(
+                button_id=button_id,
+                ts_ns=base_ns + offset,
+                app_id=app_id,
+                confidence="high",
+            )
+        )
+    _drain_if_full(queue, writer)
+    return count
+
+
+def _emit_visit(    *,
     queue: EventQueue,
     writer: StorageWriter,
     app_id: int,

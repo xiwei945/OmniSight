@@ -22,13 +22,13 @@ import threading
 from collections import deque
 from collections.abc import Iterable
 
-from .models import KeyEvent, UsageSession
+from .models import KeyEvent, MouseClick, UsageSession
 
 logger = logging.getLogger(__name__)
 
 QUEUE_MAXSIZE = 50_000
 
-Event = KeyEvent | UsageSession
+Event = KeyEvent | UsageSession | MouseClick
 
 
 class EventQueue:

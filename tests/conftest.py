@@ -59,6 +59,8 @@ def full_capabilities() -> Capabilities:
         keyboard_backend="raw_input",
         keyboard_backends=("auto", "raw_input", "pynput", "none"),
         keyboard_durations=True,
+        mouse=True,
+        mouse_backend="raw_input",
         key_position_stable=True,
         foreground=True,
         window_titles=True,
@@ -103,6 +105,11 @@ def api_context(database, full_capabilities, tmp_path):
         capabilities=full_capabilities,
         config_path=tmp_path / "config.json",
         clock=FakeClock(NOW),
+        # **测试的数据目录必须是 tmp_path。** 不传的话 ``LegacyService`` 会落到真实的
+        # ``%LOCALAPPDATA%\\OmniSight``：导入/撤销用例因此会往用户自己的库里写备份，
+        # 而在只读位置或权限收紧的机器上直接 PermissionError（本机就是这样暴露的）。
+        # 夹具本来就要隔离，这里只是把那句隐含假设写出来。
+        data_dir=tmp_path,
     )
     return context
 

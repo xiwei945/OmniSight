@@ -29,9 +29,9 @@ const DEV_DIR = path.join(ROOT, '.dev');
 /** 报告里的路径一律用正斜杠：它要被贴进 Markdown 与终端，反斜杠在两处都要再转义一次。 */
 const rel = (target) => path.relative(ROOT, target).split(path.sep).join('/');
 
-const VIEWS = ['overview', 'apps', 'keyboard', 'insights'];
+const VIEWS = ['overview', 'apps', 'keyboard', 'mouse', 'insights'];
 /**
- * 三个页面（18 文档 批 1）。`--view` 只对仪表盘有意义（它内部才有四个视图）；设置页与
+ * 三个页面（18 文档 批 1）。`--view` 只对仪表盘有意义（它内部才有五个视图）；设置页与
  * 关于页各自只有一屏，因此按 `--page` 取。
  *
  * `root` 是那一页的挂载点 id：等它有孩子才算画完，而三页的挂载点各不相同。

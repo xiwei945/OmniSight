@@ -41,6 +41,7 @@ from ..adapters.ports import (
 from ..capture.coordinator import CaptureCoordinator
 from ..capture.foreground import ForegroundMonitor
 from ..capture.keyboard import KeyboardCapture
+from ..capture.mouse import MouseCapture
 from ..capture.queue import EventQueue
 from ..presentation import security
 from ..presentation.stream import StreamHub
@@ -113,8 +114,10 @@ class CaptureBundle:
     keys: KeyRepository
     usage: UsageRepository
     keyboard: KeyboardCapture | None = None
+    mouse: MouseCapture | None = None
     foreground: ForegroundMonitor | None = None
     keyboard_source: object | None = None
+    mouse_source: object | None = None
 
     def snapshot(self) -> dict[str, object]:
         """``/api/v1/status`` 的 ``capture`` 段（05 文档 §7）。"""
@@ -128,12 +131,21 @@ class CaptureBundle:
             if self.keyboard is not None
             else {"running": False, "backend": "none"}
         )
+        mouse = (
+            self.mouse.snapshot()
+            if self.mouse is not None
+            else {"running": False, "backend": "none"}
+        )
         writer = self.writer.snapshot()
+        # 暂停是一个全局开关，但状态从哪个组件读要看谁在跑：键盘后端缺失时鼠标可能
+        # 仍然在采（反之亦然），只读键盘会让 /status 在那种机器上一直报"没暂停"。
+        paused_source = self.keyboard or self.mouse
         return {
             "foreground": foreground,
             "keyboard": keyboard,
+            "mouse": mouse,
             "writer": writer,
-            "paused": bool(self.keyboard.paused) if self.keyboard else False,
+            "paused": bool(paused_source.paused) if paused_source else False,
             "queue_depth": writer["queue_depth"],
             "dropped_events": writer["dropped_events"],
         }
@@ -264,6 +276,7 @@ class Lifecycle:
         capabilities = adapters.reconcile(
             adapter_set.capabilities,
             keyboard=capture.keyboard_source,
+            mouse=capture.mouse_source,
             foreground_running=capture.foreground is not None and capture.foreground.running,
             idle_available=adapter_set.idle is not None,
             titles_recorded=config.privacy.record_window_titles,
@@ -378,6 +391,24 @@ class Lifecycle:
                 bundle.keyboard = capture
                 bundle.keyboard_source = adapter_set.keyboard
                 logger.info("键盘采集已启动，后端 %s", capture.backend_name)
+
+        # 鼠标是**独立的采集后端**：它起不来只影响鼠标面板，键盘与屏幕时间照常
+        # （与键盘失败不影响前台监控是同一条失败隔离原则）。
+        if adapter_set.mouse is not None:
+            mouse_capture = MouseCapture(
+                adapter_set.mouse,
+                coordinator,
+                queue,
+                paused=config.capture.paused,
+            )
+            try:
+                mouse_capture.start()
+            except CaptureUnavailable as exc:
+                logger.error("鼠标采集不可用：%s", exc)
+            else:
+                bundle.mouse = mouse_capture
+                bundle.mouse_source = adapter_set.mouse
+                logger.info("鼠标采集已启动，后端 %s", mouse_capture.backend_name)
         if config.capture.paused:
             logger.warning("配置里 capture.paused = true，本次运行不会记录任何数据")
         return bundle
@@ -723,7 +754,7 @@ class Lifecycle:
         if services is None:  # pragma: no cover - 托盘运行时服务必已装配
             capture = runtime.capture
             if capture is not None:
-                for component in (capture.keyboard, capture.foreground):
+                for component in (capture.keyboard, capture.mouse, capture.foreground):
                     if component is not None:
                         component.pause() if paused else component.resume()
             return
@@ -861,6 +892,8 @@ class Lifecycle:
         if capture is not None:
             if capture.keyboard is not None:
                 _guard("停止键盘采集", capture.keyboard.stop)
+            if capture.mouse is not None:
+                _guard("停止鼠标采集", capture.mouse.stop)
             if capture.foreground is not None:
                 _guard("停止前台监控", capture.foreground.stop)
             _guard("落盘剩余事件", lambda: capture.writer.stop(timeout=5.0))

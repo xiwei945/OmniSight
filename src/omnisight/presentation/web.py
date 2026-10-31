@@ -29,6 +29,7 @@ from .api import insights as insights_api
 from .api import keyboard as keyboard_api
 from .api import legacy as legacy_api
 from .api import legacy_import as legacy_import_api
+from .api import mouse as mouse_api
 from .api import onboarding as onboarding_api
 from .api import overview as overview_api
 from .api import settings as settings_api
@@ -49,6 +50,7 @@ API_MODULES = (
     overview_api,
     usage_api,
     keyboard_api,
+    mouse_api,
     apps_api,
     insights_api,
     settings_api,
