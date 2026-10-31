@@ -9,6 +9,31 @@
 
 **本地运行的「应用使用时长 + 键盘与鼠标使用」统计工具。** 无账号、不联网、无遥测——数据只留在本机。
 
+> **这是个人修改版**：基于 [@RavenHogWarts](https://github.com/RavenHogWarts) 的 [OmniSight](https://github.com/RavenHogWarts/OmniSight)。
+> 上游是主仓——发布物、文档、issue 都在那边，要安装请取上游的 [Releases](https://github.com/RavenHogWarts/OmniSight/releases)。
+> 本仓只记录我自己在用的改动（鼠标点击统计、3D 猫耳键盘与「时间流逝」、回放倍速等），不承诺与上游同步。
+
+## 截图
+
+下面这些画面是 `tools/devserver.py` 生成的**合成库**（400 天、十几个虚构应用）跑出来的，
+不含任何人的真实使用记录。
+
+| 应用 | 键盘热力图 |
+| ---- | ---------- |
+| ![应用](docs/screenshots/apps.png) | ![键盘热力图](docs/screenshots/keyboard-3d.png) |
+
+| 鼠标 | 洞察 |
+| ---- | ---- |
+| ![鼠标](docs/screenshots/mouse.png) | ![洞察](docs/screenshots/insights.png) |
+
+总览：每小时在用什么、合计多久。
+
+![总览](docs/screenshots/overview.png)
+
+「时间流逝」是全屏展示，按真实按键顺序把一年放成一段动画，键面数字跟着累加：
+
+![时间流逝](docs/screenshots/timelapse.png)
+
 ## 功能
 
 | 面板 | 内容                                                                                  |
