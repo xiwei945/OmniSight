@@ -18,6 +18,8 @@ import * as THREE from 'three';
 import { GLTFLoader } from 'three/examples/jsm/loaders/GLTFLoader.js';
 import { RoomEnvironment } from 'three/examples/jsm/environments/RoomEnvironment.js';
 import { on as busOn } from '../core/bus.ts';
+import { getReplay, getReplayMeta, subscribe as subscribeReplay } from '../core/replay.ts';
+import { p95OfMetric, valueOfMetric } from '../core/replay-counts.ts';
 import { dayIndexAt, PressCursor } from '../core/press-stream.ts';
 import { prefersReducedMotion } from '../core/theme.ts';
 import { formatCount } from '../domain/format.ts';
@@ -32,6 +34,8 @@ import {
   parseNodeName,
 } from '../domain/keyboard-cat.ts';
 import type { PressStreamData } from '../core/press-stream.ts';
+import type { KeyTally } from '../core/replay-counts.ts';
+import type { ReplayState } from '../core/replay.ts';
 import type { HeatmapKey, HeatmapResponse } from '../types/api.d.ts';
 
 /** 渲染模式：日常染色 / 展示发光。 */
@@ -315,6 +319,19 @@ function createKeyboardScene(
   /** key_id → 按键流里的下标。 */
   let streamIndex = new Map<string, number>();
 
+  // ── 「播放今天」的计数舞台 ──────────────────────────────────────────────
+  //
+  // 回放时键面数字从 0 涨起来，放完停回今天的读数（`views/keyboard.tsx` 的按钮）。
+  // 这里只维护"累计到此刻"的账：`replayAcc` 是每键的 {次数, 总时长, 最长}，`replayP95`
+  // 是整段的色阶分母（终值 p95，装载时算好——边放边算会让颜色每帧重新归一）。
+  let replayActive = false;
+  /** 这一次回放的序号；变了说明是"重播"，账要清零。 */
+  let replayRun = -1;
+  let replayP95 = 1;
+  let replayAcc = new Map<string, KeyTally>();
+  /** 这一帧有读数变了的键。只重绘它们，别每次扫 104 个。 */
+  let replayDirty = new Set<string>();
+
   /**
    * 取景：把包围盒的 8 个角投影到 NDC，按实际占屏比例迭代收缩距离。
    *
@@ -370,29 +387,36 @@ function createKeyboardScene(
    * 逐键上色。
    * heat：中性图集 + 热力色当 diffuse，字色按档位翻白。
    * showcase：换回原图集（本色），改由 emissive 发光表达热度。
+   *
+   * 单独抽出来是因为**回放计数**也要按同一套规则给单颗键上色（见 `paintCount`）：
+   * 上色规则只写一份，两处就不会出现"回放看着像热力图、热力图又是另一套"。
+   * `needsUpdate` 只在贴图真的换了时才置位——它是给 shader 重编用的信号。
    */
-  function applyLook(): void {
+  function applyKeyLook(entry: KeyEntry): void {
     const palette = stream ? showRamp : ramp;
-    for (const entry of keys.values()) {
-      const level = entry.level;
-      const color = palette[level] ?? palette[0];
-      if (mode === 'heat') {
-        entry.material.map = neutralMap;
-        entry.material.color.set(color);
-        entry.material.emissive.set('#000000');
-        entry.material.emissiveIntensity = 0;
-        entry.label.style.color = inkFor(color);
-      } else {
-        entry.material.map = entry.originalMap;
-        entry.material.color.set('#ffffff');
-        // 发光用**固定的暖光**而不是热力色本身：色阶最热那两档是深咖，让它自发光
-        // 等于发一团黑光，越热反而越暗。亮度按档位抬，颜色始终是灯的颜色。
-        entry.material.emissive.set('#ffb271');
-        entry.material.emissiveIntensity = level === 0 ? 0 : 0.03 + level * 0.085;
-        entry.label.style.color = '#fff8ef';
-      }
+    const color = palette[entry.level] ?? palette[0];
+    const map = mode === 'heat' ? neutralMap : entry.originalMap;
+    if (entry.material.map !== map) {
+      entry.material.map = map;
       entry.material.needsUpdate = true;
     }
+    if (mode === 'heat') {
+      entry.material.color.set(color);
+      entry.material.emissive.set('#000000');
+      entry.material.emissiveIntensity = 0;
+      entry.label.style.color = inkFor(color);
+    } else {
+      entry.material.color.set('#ffffff');
+      // 发光用**固定的暖光**而不是热力色本身：色阶最热那两档是深咖，让它自发光
+      // 等于发一团黑光，越热反而越暗。亮度按档位抬，颜色始终是灯的颜色。
+      entry.material.emissive.set('#ffb271');
+      entry.material.emissiveIntensity = entry.level === 0 ? 0 : 0.03 + entry.level * 0.085;
+      entry.label.style.color = '#fff8ef';
+    }
+  }
+
+  function applyLook(): void {
+    for (const entry of keys.values()) applyKeyLook(entry);
   }
 
   /**
@@ -413,7 +437,8 @@ function createKeyboardScene(
   }
 
   function updateLabels(): void {
-    if (stream) return;
+    // 时间流逝与回放计数各自写数字，不走"热力读数"这一套。
+    if (stream || replayActive) return;
     for (const [keyId, entry] of keys) {
       // 每颗键都印读数。主次不是靠"少印几个"拉开的，而是靠**键面字符的大小**：
       // 中性图集里的字符已经缩到只占上缘一小条，下方整片留给数字（见 make_neutral_atlas.py）。
@@ -496,6 +521,13 @@ function createKeyboardScene(
     metric = nextMetric;
     levels = modelLevels(next, nextMetric);
     values = new Map((next?.keys || []).map((key) => [key.id, key]));
+    if (replayActive) {
+      // 回放中途换 metric：色阶分母与读数都要按新的 metric 重算，全部键重画一遍。
+      const meta = getReplayMeta();
+      if (meta) replayP95 = Math.max(1, p95OfMetric(metric, meta.tally));
+      for (const keyId of keys.keys()) replayDirty.add(keyId);
+      return;
+    }
     for (const [keyId, entry] of keys) entry.level = levels.get(keyId) ?? 0;
     if (ready) refresh();
   }
@@ -504,6 +536,22 @@ function createKeyboardScene(
     if (next === mode) return;
     mode = next;
     if (ready) refresh();
+  }
+
+  /**
+   * 把一段文字写进键面读数，并按"键宽 ÷ 字符数"现算字号。
+   *
+   * 不走 `offsetWidth`：每帧测 104 个元素的宽度会强制回流，15Hz 下直接吃掉几毫秒。
+   * 时间流逝与「播放今天」的计数都走这里——数字长度会变（3 位 → 6 位），字号得跟着缩。
+   */
+  function paintLabel(entry: KeyEntry, text: string): void {
+    entry.valueNode.textContent = text;
+    entry.label.style.display = text ? '' : 'none';
+    if (!text) return;
+    const width = entry.widthPx || 22;
+    const length = Math.max(3, text.length);
+    const byLength = (width * 1.04) / (length * 0.58);
+    entry.label.style.fontSize = `${Math.max(6.5, Math.min(13, Math.min(width * 0.34, byLength)))}px`;
   }
 
   /**
@@ -527,15 +575,7 @@ function createKeyboardScene(
       const count = at === undefined ? 0 : counts[at];
       if (count !== entry.lastCount) {
         entry.lastCount = count;
-        const text = count > 0 ? formatCount(count) : '';
-        entry.valueNode.textContent = text;
-        entry.label.style.display = text ? '' : 'none';
-        // 数字长度会变（3 位 → 6 位），字号按"键宽 ÷ 字符数"现算，不走 offsetWidth：
-        // 每帧测 104 个元素的宽度会强制回流，15Hz 下直接吃掉几毫秒。
-        const width = entry.widthPx || 22;
-        const length = Math.max(3, text.length);
-        const byLength = (width * 1.04) / (length * 0.58);
-        entry.label.style.fontSize = `${Math.max(6.5, Math.min(13, Math.min(width * 0.34, byLength)))}px`;
+        paintLabel(entry, count > 0 ? formatCount(count) : '');
       }
       const level = count > 0 ? Math.max(1, heatLevel(count / streamP95)) : 0;
       if (level === entry.level && !force) continue;
@@ -560,6 +600,81 @@ function createKeyboardScene(
       entry.label.style.display = 'none';
       entry.valueNode.textContent = '';
     }
+  }
+
+  // ── 「播放今天」的计数舞台 ──────────────────────────────────────────────
+  //
+  // 用户 2026-10-31 的要求：`日常` 也要能从 0 涨起，"数字跟着回放增长、结束后停在今天的
+  // 读数"。做法与时间流逝同源——按键时累加、按档位上色——但驱动是**回放的按键事件**
+  // （`key:press:detail` 带按住时长），不是逐次流。
+  //
+  // 归一化的分母固定用**整段的终值 p95**（装载时算好），不用"当前这一帧的最大值"：
+  // 后者会让颜色每帧重新归一，一颗键刚变深又被后来的键压回去。
+
+  /** 这一帧把脏掉的键重画：数字 + 档位 + 颜色。 */
+  function paintCount(entry: KeyEntry, keyId: string): void {
+    const acc = replayAcc.get(keyId);
+    const value = acc ? valueOfMetric(metric, acc) : 0;
+    paintLabel(entry, value > 0 ? formatMetric(metric, value) : '');
+    const level = value > 0 ? Math.max(1, heatLevel(value / replayP95)) : 0;
+    if (level === entry.level) return;
+    entry.level = level;
+    applyKeyLook(entry);
+  }
+
+  /** 开播时把键面擦干净：全部回到"没按过"，颜色是冷键面。 */
+  function blankCounts(): void {
+    for (const [keyId, entry] of keys) {
+      entry.level = 0;
+      paintLabel(entry, '');
+      applyKeyLook(entry);
+      replayDirty.delete(keyId);
+    }
+  }
+
+  /** 放完（或中途退出）回到这一页本该显示的读数：当前范围的热力图。 */
+  function restoreHeatmap(): void {
+    for (const [keyId, entry] of keys) entry.level = levels.get(keyId) ?? 0;
+    applyLook();
+    updateLabels();
+  }
+
+  /** 回放状态变了：开新的一段 / 结束一段。暂停与继续不动账。 */
+  function onReplayState(state: ReplayState): void {
+    const active = state.status === 'playing' || state.status === 'paused';
+    if (active) {
+      const meta = getReplayMeta();
+      if (!meta) return;
+      if (replayActive && meta.run === replayRun) return;
+      replayActive = true;
+      replayRun = meta.run;
+      replayP95 = Math.max(1, p95OfMetric(metric, meta.tally));
+      replayAcc = new Map();
+      replayDirty.clear();
+      if (ready) blankCounts();
+      return;
+    }
+    if (!replayActive) return;
+    replayActive = false;
+    replayRun = -1;
+    replayAcc = new Map();
+    replayDirty.clear();
+    if (ready) restoreHeatmap();
+  }
+
+  /** 回放放出一次按下：记账，标脏。动画那一路由 `key:press` 负责，不在这里。 */
+  function accumulate(event: { key_id: string; d: number }): void {
+    if (!replayActive) return;
+    let acc = replayAcc.get(event.key_id);
+    if (!acc) {
+      acc = { count: 0, sumMs: 0, maxMs: 0 };
+      replayAcc.set(event.key_id, acc);
+    }
+    acc.count += 1;
+    const held = Number.isFinite(event.d) ? Math.max(0, event.d) : 0;
+    acc.sumMs += held;
+    if (held > acc.maxMs) acc.maxMs = held;
+    if (keys.has(event.key_id)) replayDirty.add(event.key_id);
   }
 
   /**
@@ -822,6 +937,11 @@ function createKeyboardScene(
       ready = true;
       renderer.shadowMap.needsUpdate = true;
       refresh();
+      // 回放可能比模型先到：先把键面擦干净，再把已经攒下的账补画上去。
+      if (replayActive) {
+        blankCounts();
+        for (const keyId of replayAcc.keys()) if (keys.has(keyId)) replayDirty.add(keyId);
+      }
       // 时间流逝可能比模型先到：模型就位时补一帧，否则要等到下一次 66ms 节拍才有颜色。
       if (stream) {
         streamLastFrame = performance.now();
@@ -845,6 +965,17 @@ function createKeyboardScene(
   const offPress = busOn<string[]>('key:press', (ids) => {
     for (const keyId of ids) press(keyId);
   });
+  // 回放的记账通道：多带一个按住时长，只有"要把读数累加上去"的 3D 需要它。
+  const offPressDetail = busOn<{ key_id: string; d: number }[]>('key:press:detail', (events) => {
+    if (!Array.isArray(events)) return;
+    for (const event of events) accumulate(event);
+  });
+  // 回放开关：直接订阅模块状态，**不经过 React**——回放进度是 5Hz，让整页跟着重渲染
+  // 不值得，而且这条路径和 bus 一样是"绕过渲染"的。
+  const offReplayChange = subscribeReplay(onReplayState);
+  // 订阅不给"当前值"：场景可能是回放中途才建起来的（切 3D/平面、开完展示层回来），
+  // 那种情况下也要立刻进入/退出计数状态。
+  onReplayState(getReplay());
 
   const loop = () => {
     raf = window.requestAnimationFrame(loop);
@@ -906,6 +1037,15 @@ function createKeyboardScene(
     }
     // 键帽没动 → 阴影贴图这一帧一定和上一帧一样，不必重画（2048² 的一次完整投影）。
     if (capsMoved) renderer.shadowMap.needsUpdate = true;
+
+    // 「播放今天」：只重画这一帧真的变过读数的键（通常 1–3 颗）。
+    if (replayActive && replayDirty.size) {
+      for (const keyId of replayDirty) {
+        const entry = keys.get(keyId);
+        if (entry) paintCount(entry, keyId);
+      }
+      replayDirty.clear();
+    }
 
     // 开屏运镜：从远拉近，落位后停下不动（水波要在静止的键盘上才看得清）。
     if (ready && !introDone && fitDistance > 0) {
@@ -1001,6 +1141,8 @@ function createKeyboardScene(
       disposed = true;
       cancelAnimationFrame(raf);
       offPress();
+      offPressDetail();
+      offReplayChange();
       observer.disconnect();
       canvas.removeEventListener('pointerup', onCanvasClick);
       canvas.removeEventListener('pointermove', onCanvasMove);

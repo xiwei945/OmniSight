@@ -13,6 +13,8 @@
 // 不需要额外处理"后台时要不要走时钟"。
 import { get as apiGet } from './api.ts';
 import { emit } from './bus.ts';
+import { tally } from './replay-counts.ts';
+import type { ReplayTally } from './replay-counts.ts';
 
 export type ReplayStatus = 'idle' | 'loading' | 'playing' | 'paused' | 'empty' | 'error';
 
@@ -28,6 +30,17 @@ export interface ReplayEvent {
   key_id: string;
   /** 相对当天 0 点的毫秒偏移。 */
   t: number;
+  /** 那一次按住多久（毫秒）。老数据可能缺，缺了按 0 计。 */
+  d?: number;
+}
+
+/**
+ * 这一份回放的账。`run` 每次 `start()` 自增，宿主据此判断"这是新的一次"还是
+ * "暂停后继续"——**重播必须能把计数清零**，否则第二次放出来的数字是叠加的。
+ */
+export interface ReplayMeta {
+  run: number;
+  tally: ReplayTally;
 }
 
 /** 整体回放时长目标。几万次按键也在这个量级放完。 */
@@ -54,6 +67,9 @@ let schedule: number[] = [];
 let cursor = 0;
 let speed = 1;
 let raf = 0;
+/** 这一份回放的账（每键累计 + 色阶分母需要的终值）。`run` 每次开播自增。 */
+let meta: ReplayMeta | null = null;
+let runSeq = 0;
 /**
  * 虚拟时钟。**累加**而不是"起点 + 墙钟差"：后者的写法在标签页切后台时，rAF 停摆
  * 几分钟回来，`now - wallBase` 一次跳掉几分钟，一帧里把几千颗键全发出去——画面成了
@@ -75,6 +91,16 @@ function setState(next: ReplayState): void {
 
 export function getReplay(): ReplayState {
   return state;
+}
+
+/**
+ * 这一份回放的累计账；没有在放（或还没装载完）时是 `null`。
+ *
+ * 给 3D 场景用：它要在回放过程中把键面数字从 0 累加上去，而"每个键最后会到多少"
+ * 决定了色阶分母（见 `core/replay-counts.ts:p95OfMetric`）。
+ */
+export function getReplayMeta(): ReplayMeta | null {
+  return meta;
 }
 
 /** @returns 注销函数 */
@@ -114,7 +140,12 @@ function frame(): void {
   elapsed += Math.min(MAX_FRAME_MS, Math.max(0, now - lastFrameAt));
   lastFrameAt = now;
   while (cursor < events.length && schedule[cursor] <= elapsed) {
-    emit('key:press', [events[cursor].key_id]);
+    const event = events[cursor];
+    // 两条通道：`key:press` 是"这一下发生了"（2D 与 3D 都只靠它做按压动画），
+    // `key:press:detail` 多带一个按住时长——只有要**累加读数**的 3D 场景需要它。
+    // 合成一条会逼着 2D 视图也去认识 `d`，而它根本不用。
+    emit('key:press', [event.key_id]);
+    emit('key:press:detail', [{ key_id: event.key_id, d: event.d ?? 0 }]);
     cursor += 1;
   }
   if (cursor >= events.length) {
@@ -147,11 +178,16 @@ export async function start(): Promise<void> {
     if (!payload.available || !payload.events?.length) {
       events = [];
       schedule = [];
+      meta = null;
       setState({ status: 'empty', total: 0, done: 0 });
       return;
     }
     events = payload.events;
     buildSchedule(events);
+    // 一次遍历把这一天的账算好：每键累计（次数/总时长/最长）+ 色阶分母要用的终值。
+    // 放在装载时算，而不是边放边算——边放边算拿不到"终值"，颜色会在中途被重新归一。
+    runSeq += 1;
+    meta = { run: runSeq, tally: tally(events) };
     cursor = 0;
     elapsed = 0;
     lastFrameAt = performance.now();
@@ -159,6 +195,7 @@ export async function start(): Promise<void> {
     setState({ status: 'playing', total: events.length, done: 0 });
     raf = window.requestAnimationFrame(frame);
   } catch {
+    meta = null;
     setState({ status: 'error', total: 0, done: 0 });
   }
 }
@@ -188,6 +225,7 @@ export function stop(): void {
   cancelFrame();
   events = [];
   schedule = [];
+  meta = null;
   cursor = 0;
   elapsed = 0;
   setState({ status: 'idle', total: 0, done: 0 });

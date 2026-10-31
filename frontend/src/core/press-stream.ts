@@ -12,6 +12,7 @@
 //      所以档位阈值跟着这一段的终值走，而不是每帧重算。
 //
 // 纯函数 + 零 three / 零 DOM，`node --test --experimental-strip-types` 直接跑。
+import { p95OfCounts } from './counts.ts';
 import type { PressStreamResponse } from '../types/api.d.ts';
 
 export interface PressStreamData {
@@ -109,14 +110,14 @@ export function decodePressStream(payload: PressStreamResponse | null | undefine
 /**
  * 终值 p95。时间流逝结束时每颗键的累计次数，取 95 分位当色阶上限——这样**最后停在
  * 的那一帧**跟日常热力图的档位是同一套，而不是放完只剩一片红。
+ *
+ * 分位数本体在 `core/counts.ts`：今天的回放（`replay-counts.ts`）用的是同一条规则，
+ * 两处各写一份的话，"同一个键在两个页面里颜色不同"是迟早的事。
  */
 export function terminalP95(data: PressStreamData): number {
   const counts = new Uint32Array(data.keys.length);
   for (let index = 0; index < data.count; index += 1) counts[data.indices[index]] += 1;
-  const positive = Array.from(counts).filter((value) => value > 0).sort((left, right) => left - right);
-  if (!positive.length) return 1;
-  const position = Math.min(positive.length - 1, Math.floor(positive.length * 0.95));
-  return Math.max(1, positive[position]);
+  return p95OfCounts(counts);
 }
 
 /** 某一时刻是第几天（0 起）。没有 `days` 时返回 0。 */
