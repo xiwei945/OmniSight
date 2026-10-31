@@ -970,6 +970,22 @@ export interface LiveCounters {
   data_version: number;
 }
 
+/** 回放里的一次按下。`t` 是相对当天 0 点的毫秒偏移，前端据此还原节奏。 */
+export interface KeyboardReplayEvent {
+  key_id: string;
+  t: number;
+}
+
+/** 一天的回放序列。 */
+export interface KeyboardReplayResponse extends Envelope {
+  available: boolean;
+  events: KeyboardReplayEvent[];
+  /** 一天按下超过上限被截断时为真——不假装放完了。 */
+  truncated: boolean;
+  /** 上限本身，供界面说明"放的是前 N 次"。 */
+  limit: number;
+}
+
 /** `keypress` 事件：**只有 key_id**，没有时间戳、没有顺序（08 文档 §2）。 */
 export interface LiveKeypress {
   keys: string[];

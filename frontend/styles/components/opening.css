@@ -1,0 +1,113 @@
+/* 开屏浮层（一次会话一次）。
+ *
+ * 它盖住整个视口，所以用最深的舞台色而不是 --surface-page：浅色开屏在夜里刺眼，
+ * 而深底正好把奶白键帽与暖光衬出来——与展示模式的理由相同。
+ */
+.opening {
+  position: fixed;
+  inset: 0;
+  z-index: 9000;
+  display: grid;
+  grid-template-rows: 1fr auto;
+  gap: var(--space-6);
+  padding: clamp(24px, 6vh, 72px) clamp(24px, 6vw, 96px) clamp(28px, 5vh, 64px);
+  background:
+    radial-gradient(90% 70% at 50% 30%, #3b2c22 0%, #241b16 52%, #14100c 100%);
+  color: #fff8ef;
+  animation: opening-in 520ms var(--ease-out) both;
+}
+
+.opening__stage {
+  position: relative;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  min-height: 0;
+  /* 开屏里的 3D 是"产品照"，不要再套一层卡片边框。 */
+}
+.opening__stage .keyboard-3d {
+  height: 100%;
+  max-height: 62vh;
+  background: transparent;
+  border: 0;
+  box-shadow: none;
+}
+/* 无 WebGL / 减少动态时的替身：一块暖色光斑，别让上半屏空着。 */
+.opening__block {
+  width: min(760px, 78vw);
+  aspect-ratio: 16 / 7;
+  border-radius: 40% 40% 30% 30% / 55% 55% 30% 30%;
+  background: radial-gradient(closest-side, rgba(255, 216, 176, .18), transparent 72%);
+  filter: blur(6px);
+}
+
+.opening__copy {
+  text-align: center;
+  animation: opening-rise 700ms var(--ease-out) 120ms both;
+}
+.opening__eyebrow {
+  margin: 0 0 var(--space-3);
+  font-family: var(--font-small);
+  font-size: var(--text-xs);
+  letter-spacing: .18em;
+  text-transform: uppercase;
+  color: rgba(255, 240, 224, .5);
+}
+.opening__title {
+  margin: 0;
+  font-family: var(--font-display);
+  font-size: clamp(38px, 6vw, 64px);
+  font-weight: var(--weight-thin-display);
+  letter-spacing: -0.02em;
+  line-height: 1;
+  color: #fffaf3;
+}
+.opening__line {
+  margin: var(--space-4) 0 0;
+  font-size: clamp(14px, 1.5vw, 17px);
+  color: rgba(255, 240, 224, .72);
+}
+
+.opening__hint {
+  position: absolute;
+  left: 0;
+  right: 0;
+  bottom: clamp(14px, 2.4vh, 26px);
+  text-align: center;
+  font-size: var(--text-2xs);
+  letter-spacing: .12em;
+  color: rgba(255, 240, 224, .34);
+  animation: opening-rise 700ms var(--ease-out) 900ms both;
+}
+
+.opening--leaving {
+  animation: opening-out 420ms var(--ease-in-out) both;
+  pointer-events: none;
+}
+
+@keyframes opening-in {
+  from { opacity: 0; }
+  to   { opacity: 1; }
+}
+@keyframes opening-rise {
+  from { opacity: 0; transform: translateY(10px); }
+  to   { opacity: 1; transform: none; }
+}
+@keyframes opening-out {
+  from { opacity: 1; }
+  to   { opacity: 0; }
+}
+
+/* 减少动态：不放大、不上浮，直接给最终状态。 */
+@media (prefers-reduced-motion: reduce) {
+  .opening,
+  .opening__copy,
+  .opening__hint {
+    animation: none;
+  }
+}
+
+@media (max-width: 767px) {
+  .opening__stage .keyboard-3d { max-height: 48vh; }
+  .opening { padding: 20px 16px 24px; }
+}

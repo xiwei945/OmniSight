@@ -19,6 +19,7 @@
 @import url("components/app-picker.css");
 @import url("components/key-cap.css");
 @import url("components/keyboard-tray.css");
+@import url("components/keyboard-3d.css");
 @import url("components/heat-cell.css");
 @import url("components/chart.css");
 @import url("components/hour-band.css");
@@ -35,6 +36,7 @@
 @import url("components/table.css");
 @import url("components/import.css");
 @import url("components/onboarding.css");
+@import url("components/opening.css");
 @import url("components/confirm.css");
 @import url("components/context-menu.css");
 

@@ -37,7 +37,7 @@ THEMES = frozenset({"system", "light", "dark"})
 #: 键盘热力图与日历格子的色阶（14 文档 §3.1 的两档）。18 文档 批 3 之前它只存在于前端的
 #: localStorage 里——那意味着换一个浏览器打开，用户三个月前设的暖色就没了，而界面上没有
 #: 任何地方说得出为什么。设置页那一行现在与其余每一项一样由 ``/api/v1/settings`` 元数据生成。
-HEATS = frozenset({"blue", "warm"})
+HEATS = frozenset({"latte", "blue", "warm"})
 DEFAULT_VIEWS = frozenset({"daily", "weekly", "monthly", "yearly", "total"})
 KEYBOARD_LAYOUTS = frozenset({"auto", "ansi104", "iso105", "tkl87", "mac_ansi", "mac_iso"})
 UI_SHELLS = frozenset({"browser", "webview"})
@@ -91,7 +91,7 @@ class StorageConfig:
 class UiConfig:
     theme: str = "system"
     #: 色阶（蓝 / 暖）。与 ``theme`` 一样由服务端渲染进 ``<html data-heat>``，因此不闪。
-    heat: str = "blue"
+    heat: str = "latte"
     locale: str = "zh-CN"
     default_view: str = "daily"
     timezone: str | None = None

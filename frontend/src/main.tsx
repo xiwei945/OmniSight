@@ -24,6 +24,7 @@ import type { Root } from 'react-dom/client';
 import { Icon } from './components/Icon.tsx';
 import { ImportBanner, openImportWizard } from './components/ImportWizard.tsx';
 import { maybeShowOnboarding } from './components/Onboarding.tsx';
+import { maybeShowOpening } from './components/Opening.tsx';
 import { DateBar, RangeBar, goToday, step as stepPeriod } from './components/PeriodNav.tsx';
 import { fail } from './components/toast.tsx';
 import { hide as hideTooltip, show as showTooltip } from './components/tooltip.tsx';
@@ -349,6 +350,10 @@ async function main(): Promise<void> {
     viewRoot?.render(<MissingToken />);
     return;
   }
+
+  // 开屏：一次会话只放一次，盖在仪表盘上，自己定时卸载（见 components/Opening.tsx）。
+  // 放在拿到指令牌之后——没有指令牌时该看到的是 MissingToken，而不是一张好看的封面。
+  maybeShowOpening();
 
   // 顺序是刻意的：先读状态与配置，再让路由填 store，最后才装 route 订阅并挂载视图。
   // 这时 activeModule 还是 null，所以中间几次 setState 触发的 refresh() 都是空转。

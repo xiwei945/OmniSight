@@ -82,11 +82,12 @@ export function KeyboardView({
         const cap = caps.current.get(keyId);
         if (!cap) continue;
         cap.classList.add('is-pressed');
-        // 动画类在下一帧后移除。reduced-motion 下 CSS 已把过渡关掉，类照加不影响。
         window.setTimeout(() => cap.classList.remove('is-pressed'), reduced ? 60 : PRESS_CLEAR_MS);
       }
     });
   }, []);
+
+  useEffect(() => () => hideTooltip(), []);
 
   /**
    * 键面装不下 11px 的数值就整体藏起来（14 文档 §2.5）。
@@ -182,8 +183,6 @@ export function KeyboardView({
         </div>
         </div>
       </div>
-      <Orphans keys={heatmap?.orphan_keys} metric={metric} />
-      <KeyTable values={values} metric={metric} />
     </>
   );
 }
@@ -304,66 +303,5 @@ export function HeatLegend({
         <Icon name="info" size={13} />
       </span>
     </div>
-  );
-}
-
-/** 布局里没有的键（后端的 orphan_keys）。不渲染它们，键盘总数就与指标卡不一致。 */
-function Orphans({ keys, metric }: { keys: readonly HeatmapKey[] | undefined; metric: string }) {
-  if (!keys?.length) return null;
-  return (
-    <div className="orphans">
-      <div className="orphans__title">不在当前布局中的键（{keys.length}）</div>
-      <div className="orphans__list">
-        {keys.map((key) => {
-          const record = key as unknown as Record<string, unknown>;
-          return (
-            <span className="key-chip" key={key.id}>
-              <b>{key.label || key.id}</b>
-              <span>{formatMetric(metric, Number(record[metric] ?? key.press_count ?? 0))}</span>
-            </span>
-          );
-        })}
-      </div>
-    </div>
-  );
-}
-
-/**
- * 表格孪生：每个键的完整读数，可复制（14 文档 §4.4）。
- *
- * 键盘是 DOM 而不是 canvas，所以它没有走 charts/Chart.tsx 的 sr-only 表格路径。
- * 这张折叠表补上，同时兜住"键面数值印不下"的场景。
- */
-function KeyTable({ values, metric }: { values: Map<string, HeatmapKey>; metric: string }) {
-  const definition = metricOf(metric);
-  const read = (entry: HeatmapKey) =>
-    Number((entry as unknown as Record<string, unknown>)[metric]) || 0;
-  const list = [...values.values()].filter((entry) => read(entry) > 0).sort((a, b) => read(b) - read(a));
-  return (
-    <details className="keyboard-table">
-      <summary>表格视图</summary>
-      <div className="keyboard-table__scroll">
-        <table className="table">
-          <thead>
-            <tr>
-              <th>键位</th>
-              <th>次数</th>
-              <th>占比</th>
-              <th>均时长</th>
-            </tr>
-          </thead>
-          <tbody>
-            {list.map((entry) => (
-              <tr key={entry.id}>
-                <td>{entry.label || entry.id}</td>
-                <td className="numeric">{definition.format(read(entry))}</td>
-                <td className="numeric">{formatPercent(entry.percent)}</td>
-                <td className="numeric">{formatMetric('duration_avg_ms', entry.duration_avg_ms)}</td>
-              </tr>
-            ))}
-          </tbody>
-        </table>
-      </div>
-    </details>
   );
 }

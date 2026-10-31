@@ -1,4 +1,4 @@
-// 主题切换。三态 system / light / dark，另有热力色蓝/暖两选（06 文档 §3.1、§3.2）。
+// 主题切换。三态 system / light / dark，另有热力色拿铁/蓝/暖三选（06 文档 §3.1、§3.2）。
 //
 // **首屏那一帧不由这里负责**：服务端按 `ui.theme` 直接渲染 `<html data-theme>`
 // （web.py:index）。这里管的是切换与本地偏好的回读——它跑在首次绘制之后，因此
@@ -14,7 +14,7 @@ const THEME_KEY = 'omnisight.theme';
 const HEAT_KEY = 'omnisight.heat';
 export const THEMES = ['system', 'light', 'dark'] as const;
 export type Theme = (typeof THEMES)[number];
-export type Heat = 'blue' | 'warm';
+export type Heat = 'latte' | 'blue' | 'warm';
 
 /** 导出给 ThemeMenu：store 里的 theme 切片是 string（它还要承接服务端 `ui.theme` 的值）。 */
 export function isTheme(value: string): value is Theme {
@@ -25,11 +25,12 @@ export function apply(theme: string, heat: string): void {
   const root = document.documentElement;
   if (theme === 'light' || theme === 'dark') root.dataset.theme = theme;
   else delete root.dataset.theme;
-  if (heat === 'warm') root.dataset.heat = 'warm';
+  // 拿铁是默认档：不写属性，让 :root 里那套直接生效（少一个选择器就少一处不一致）。
+  if (heat === 'blue' || heat === 'warm') root.dataset.heat = heat;
   else delete root.dataset.heat;
   try {
     localStorage.setItem(THEME_KEY, theme);
-    localStorage.setItem(HEAT_KEY, heat === 'warm' ? 'warm' : 'blue');
+    localStorage.setItem(HEAT_KEY, heat === 'blue' || heat === 'warm' ? heat : 'latte');
   } catch {
     // 隐私模式：本次会话仍然生效，只是下次启动会闪一下。
   }
@@ -45,7 +46,7 @@ export function set(theme: string): Theme {
 }
 
 export function setHeat(heat: string): Heat {
-  const next: Heat = heat === 'warm' ? 'warm' : 'blue';
+  const next: Heat = heat === 'blue' || heat === 'warm' ? heat : 'latte';
   setState('heat', next);
   apply(getState().theme, next);
   return next;
@@ -66,7 +67,7 @@ export function setHeat(heat: string): Heat {
 export function restore(): void {
   const rendered = document.documentElement.dataset;
   const renderedTheme = rendered.theme || 'system';
-  const renderedHeat = rendered.heat || 'blue';
+  const renderedHeat = rendered.heat || 'latte';
   let theme = renderedTheme;
   let heat = renderedHeat;
   try {
@@ -76,7 +77,7 @@ export function restore(): void {
     // 读不到就沿用服务端渲染的那一档。
   }
   setState('theme', isTheme(theme) ? theme : 'system');
-  setState('heat', heat === 'warm' ? 'warm' : 'blue');
+  setState('heat', heat === 'blue' || heat === 'warm' ? heat : 'latte');
   apply(getState().theme, getState().heat);
 }
 

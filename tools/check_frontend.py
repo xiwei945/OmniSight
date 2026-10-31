@@ -168,9 +168,11 @@ def exports_of(path: Path) -> set[str]:
 #: 但"有依赖"和"随便加依赖"是两件事——每加一个包都要在这里写一行，于是依赖增长在
 #: code review 里是可见的，而不是藏在某个文件的 import 里。
 #:
-#: 每一项都要能回答"它进了产物、因此进了许可清单吗"：三个都是 MIT，由
-#: `tools/npm_licenses.py` 采集进 THIRD_PARTY_NOTICES.md。
-ALLOWED_BARE_IMPORTS = frozenset({"react", "react-dom", "lucide-react"})
+#: 每一项都要能回答"它进了产物、因此进了许可清单吗"：react/react-dom 是 MIT、
+#: lucide-react 是 ISC、three 是 MIT，都由 `tools/npm_licenses.py` 采集进
+#: THIRD_PARTY_NOTICES.md。three 是个例外——它同时提供 `three/examples/jsm/*` 子路径，
+#: 而包名判定取第一段，因此一个 "three" 就盖住了 GLTFLoader / OrbitControls。
+ALLOWED_BARE_IMPORTS = frozenset({"react", "react-dom", "lucide-react", "three"})
 
 
 def _bare_allowed(target: str) -> bool:

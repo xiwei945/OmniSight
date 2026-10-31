@@ -49,7 +49,16 @@ class KeyboardService:
         self._ctx = ctx
         self._apps = apps
 
-    # ── 布局 ────────────────────────────────────────────────────────────
+    def replay_day(self, day: str) -> dict | None:
+        """Return today's ordered key sequence from raw events when enabled.
+
+        ``None`` 表示拿不到（原始事件关闭、或那个月没有表）——表现层据此回
+        ``available: false``，而不是一段空序列。
+        """
+        if not self._ctx.config.capture.store_raw_key_events:
+            return None
+        return self._ctx.key_repo.replay_day(day, self._ctx.timezone)
+
     def resolve_family(self, requested: str | None = None) -> tuple[str, str, list[dict]]:
         """返回 ``(family, source, warnings)``。
 

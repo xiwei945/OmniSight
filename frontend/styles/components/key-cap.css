@@ -162,7 +162,49 @@
   );
 }
 
-/* 不在当前布局里但有数据的键（05 文档 §4 的 orphan_keys）。 */
+.keyboard-replay {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  margin-top: var(--space-3);
+  color: var(--text-secondary);
+  font-size: var(--text-xs);
+}
+
+.keyboard-replay button {
+  border: 1px solid var(--border-default);
+  border-radius: var(--radius-sm);
+  background: var(--surface-card);
+  color: var(--text-primary);
+  padding: 5px 10px;
+  cursor: pointer;
+}
+
+.keyboard-replay button:disabled {
+  opacity: .55;
+  cursor: wait;
+}
+
+/* 回放进度条。宽度用 --data-keys（"这是哪个量"的按键色）而不是主色，与键盘面板
+   的语义一致。 */
+.keyboard-replay__progress {
+  position: relative;
+  flex: 1 1 auto;
+  max-width: 260px;
+  height: 6px;
+  border-radius: var(--radius-full);
+  background: var(--surface-sunken);
+  overflow: hidden;
+}
+.keyboard-replay__progress > i {
+  display: block;
+  height: 100%;
+  background: var(--data-keys);
+}
+.keyboard-replay__count {
+  font-variant-numeric: tabular-nums;
+  color: var(--text-tertiary);
+}
 .orphans { margin-top: var(--space-4); }
 .orphans__title { font-size: var(--text-sm); color: var(--text-secondary); margin-bottom: var(--space-2); }
 .orphans__list { display: flex; flex-wrap: wrap; gap: var(--space-2); }

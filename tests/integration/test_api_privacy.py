@@ -8,7 +8,7 @@
 
 1. 窗口标题不出接口（用户显式开启 + 显式请求时才例外）；
 2. 每个 ``/api/v1/*`` 都要令牌；
-3. 常规查询不扫 ``raw_key_events_*``（唯一例外带单日窗上限）；
+3. 常规查询不扫 ``raw_key_events_*``（两处例外都带单日窗上限：应用小时回溯、当天回放）；
 4. ``app_id = 0`` 的按键不消失也不变成一个"应用"。
 """
 
@@ -25,6 +25,11 @@ from seeded import SECRET_TITLE
 PARAM_VALUES = {"app_id": "1", "key_id": "key_a", "process_name": "code.exe"}
 #: 需要副作用或长连接的路由不在只读遍历里跑；它们各自有专门的用例。
 SKIP_ENDPOINTS = {"stream", "capture_pause", "static"}
+
+#: 允许扫原始事件表的端点。除"应用小时回溯"之外，回放是**唯一以"逐次顺序"为语义的
+#: 读路径**——热力图、时间线、洞察全都只碰 ``agg_*``，而回放要的就是原始事件的先后，
+#: 绕不过去。它因此在下一条遍历里被排除，改由专门的用例盯住"有单日窗上限"。
+RAW_TABLE_ENDPOINTS = frozenset({"/api/v1/keyboard/replay"})
 
 
 def _readable_paths(app: Flask) -> list[str]:
@@ -177,27 +182,34 @@ def test_regular_queries_never_scan_the_raw_event_tables(
 ):
     """一年的原始事件是千万级。扫一次就没有 P95 可谈了（01 文档 §4.1、12 文档 M2）。"""
     for path in paths:
+        if path in RAW_TABLE_ENDPOINTS:
+            continue
         joiner = "&" if "?" in path else "?"
         touched = _sql_touching_raw(seeded_client, database, f"{path}{joiner}range={range_name}")
         assert not touched, f"{path} 扫了原始事件表：{touched}"
 
 
-def test_the_one_documented_exception_is_bounded_to_a_single_day(
+def test_the_documented_raw_table_exceptions_are_bounded_to_a_single_day(
     seeded_client, database, seeded
 ):
-    """应用维度的小时回溯是唯一例外，条件是**必须有时间窗上限**。"""
-    touched = _sql_touching_raw(
-        seeded_client,
-        database,
+    """两处例外都**必须有时间窗上限**，且落到具体月表。"""
+    cases = [
         f"/api/v1/keyboard/timeline?view=hours&app_id={seeded.code}&range=day",
-    )
-    assert len(touched) == 1, "例外只该发一条查询"
-    # sqlite3 的 trace 回调给出的是展开后的 SQL（参数已代入），因此断言的是"有边界"
-    # 而不是占位符本身。
-    sql = touched[0]
-    assert f"app_id = {seeded.code}" in sql
-    assert "down_ts_ns >=" in sql and "down_ts_ns <" in sql, "缺时间窗上限"
-    assert "raw_key_events_2026_09" in sql, "必须落到具体月表，不能跨分区"
+        "/api/v1/keyboard/replay?date=2026-09-02",
+    ]
+    for path in cases:
+        touched = _sql_touching_raw(seeded_client, database, path)
+        assert len(touched) == 1, f"{path} 的例外只该发一条查询"
+        # sqlite3 的 trace 回调给出的是展开后的 SQL（参数已代入），因此断言的是"有边界"
+        # 而不是占位符本身。
+        sql = touched[0]
+        assert "down_ts_ns >=" in sql and "down_ts_ns <" in sql, f"{path} 缺时间窗上限"
+        assert "raw_key_events_2026_09" in sql, f"{path} 必须落到具体月表，不能跨分区"
+    # 回放还要有行数上限：一天十万次按键也不能一次性倒给前端。
+    replay_sql = _sql_touching_raw(
+        seeded_client, database, "/api/v1/keyboard/replay?date=2026-09-02"
+    )[0]
+    assert "LIMIT" in replay_sql, "回放缺行数上限"
 
 
 def test_the_exception_says_so_instead_of_drawing_zeros_when_raw_events_are_off(

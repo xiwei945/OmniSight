@@ -65,7 +65,39 @@ FORBIDDEN_LICENSE_PATTERN = re.compile(r"(?<![A-Za-z])(?:AGPL|GPL)", re.IGNORECA
 #:
 #: 留着这张表与两个渲染函数，是因为「把第三方素材搬进自己的文件」这件事随时可能再
 #: 发生一次（字体、示例数据、图标），而那时清单里需要有它的位置。
-EMBEDDED_ASSETS: tuple[dict[str, str], ...] = ()
+EMBEDDED_ASSETS: tuple[dict[str, str], ...] = (
+    {
+        "name": "Mechanical keyboard",
+        "version": "1.0",
+        "license": "CC-BY-4.0",
+        "homepage": (
+            "https://sketchfab.com/3d-models/"
+            "mechanical-keyboard-1ba4055c33674567b51b783701ed05ce"
+        ),
+        "embedded": (
+            "键帽与外壳，作为 3D 键盘视图的模型。原模型是一个合并的键帽网格，"
+            "由 tools/build_keyboard_model.py 拆成 104 个一键一节点、去掉线缆与 USB 后，"
+            "写入 presentation/static/assets/keyboard.glb"
+        ),
+        "source": "Sketchfab，作者 FelikinRuslan",
+        "license_text": (
+            "Mechanical keyboard by FelikinRuslan, licensed under CC BY 4.0.\n"
+            "Source: https://sketchfab.com/3d-models/"
+            "mechanical-keyboard-1ba4055c33674567b51b783701ed05ce\n"
+            "License: https://creativecommons.org/licenses/by/4.0/\n\n"
+            "You are free to share and adapt the material for any purpose, even commercially, "
+            "provided you give appropriate credit, provide a link to the license, and indicate "
+            "if changes were made.\n\n"
+            "Changes made: the merged keycap mesh was split into one node per key, the cable "
+            "and USB plug were removed, and node names were replaced with the keyboard's key "
+            "identifiers.\n\n"
+            "THE MATERIAL IS PROVIDED AS-IS, WITHOUT WARRANTIES OF ANY KIND, EXPRESS OR "
+            "IMPLIED. To the extent possible, the licensor waives all liability for damages "
+            "arising from the use of the material.\n\n"
+            "Full legal code: https://creativecommons.org/licenses/by/4.0/legalcode"
+        ),
+    },
+)
 
 
 #: 许可/版权类文件的名字。**按文件名匹配，不按路径**：新式 wheel 把正文放在

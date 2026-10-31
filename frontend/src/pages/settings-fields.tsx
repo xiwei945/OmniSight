@@ -51,6 +51,7 @@ const OPTION_LABELS: Record<string, string> = {
   system: '跟随系统',
   light: '浅色',
   dark: '深色',
+  latte: '奶油拿铁',
   blue: '蓝色',
   warm: '暖色',
   daily: '日',

@@ -320,6 +320,8 @@ ENDPOINT_TYPES: tuple[tuple[str, str], ...] = (
         "KeyboardTimelineResponse",
     ),
     (f"/api/v1/keyboard/ergonomics?{DAY}", "ErgonomicsResponse"),
+    # 回放：可用性 + 带上毫秒偏移的有序事件。需要当天有原始事件（seeded 播了 2026-09-02）。
+    ("/api/v1/keyboard/replay?date=2026-09-02", "KeyboardReplayResponse"),
     (f"/api/v1/insights/app-keyboard?{DAY}&limit=20", "AppKeyboardResponse"),
     (f"/api/v1/insights/rhythm?{DAY}", "RhythmResponse"),
     ("/api/v1/status", "StatusResponse"),

@@ -7,8 +7,10 @@
 
 from __future__ import annotations
 
-from sqlite3 import Connection
+from datetime import datetime, timedelta, tzinfo
+from sqlite3 import Connection, DatabaseError
 
+from .. import schema
 from ..database import Database
 
 _GRAIN_TABLES = {
@@ -110,6 +112,55 @@ class KeyRepository:
             }
             for row in rows
         ]
+
+    #: 一天回放最多取这么多条按下。正常人一天的按键上限远低于此；超过它几乎只可能来自
+    #: 卡键或自动化脚本，而那类输入没有逐次回放的价值。截断时如实标记，不假装放完了。
+    REPLAY_LIMIT = 20_000
+
+    def replay_day(self, day: str, tz: tzinfo | None = None) -> dict | None:
+        """某一天的有序按下序列，带相对当天 0 点的毫秒偏移。
+
+        这是**唯一允许按天扫一次性原始事件表的读路径**（01 文档 §4.1 的例外），因此
+        它必须能撑住最坏情况：加 ``LIMIT`` 与升序索引 ``idx_rke_*_down`` 走同一条路，
+        超出的部分直接不取。
+
+        返回 ``None`` 表示那个月的原始表不存在（``store_raw_key_events`` 关闭，或那个
+        月没有数据）——调用方据此回 ``available: false``，而不是一张空的序列。
+        """
+        try:
+            table = schema.raw_table_name(day[:7])
+            midnight = datetime.fromisoformat(day)
+        except (ValueError, TypeError):
+            return None
+        midnight = midnight.replace(tzinfo=tz) if tz else midnight.astimezone()
+        start_ns = int(midnight.timestamp() * 1_000_000_000)
+        end_ns = int((midnight + timedelta(days=1)).timestamp() * 1_000_000_000)
+        conn = self._conn()
+        exists = conn.execute(
+            "SELECT 1 FROM sqlite_master WHERE type = 'table' AND name = ?", (table,)
+        ).fetchone()
+        if exists is None:
+            return None
+        try:
+            rows = conn.execute(
+                f"SELECT key_id, down_ts_ns FROM {table} "
+                "WHERE down_ts_ns >= ? AND down_ts_ns < ? "
+                "ORDER BY down_ts_ns, id LIMIT ?",
+                (start_ns, end_ns, self.REPLAY_LIMIT + 1),
+            ).fetchall()
+        except DatabaseError:
+            return None
+        truncated = len(rows) > self.REPLAY_LIMIT
+        rows = rows[: self.REPLAY_LIMIT]
+        events = [
+            {
+                "key_id": str(row["key_id"]),
+                # 毫秒偏移。整数足够——回放的节奏误差远粗于 1ms，浮点只会让载荷变大。
+                "t": int((int(row["down_ts_ns"]) - start_ns) // 1_000_000),
+            }
+            for row in rows
+        ]
+        return {"events": events, "truncated": truncated, "limit": self.REPLAY_LIMIT}
 
     def press_total(self) -> int:
         row = self._conn().execute("SELECT SUM(press_count) FROM agg_key_total").fetchone()

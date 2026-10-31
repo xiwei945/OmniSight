@@ -1,0 +1,95 @@
+/* 3D 键盘画布（views/keyboard 的 3D 模式）。
+ *
+ * 画布尺寸由 CSS 定、three 的 renderer 只在 ResizeObserver 回调里跟着设尺寸——两者
+ * 不各算一套，避免"画布逻辑尺寸与显示尺寸不一致"导致的一像素模糊。背景用下沉面而不是
+ * 透明，让键帽有一块落脚的地方（与 2D 的 --key-tray 同一条理由）。 */
+.keyboard-3d {
+  position: relative;
+  width: 100%;
+  height: clamp(320px, 52vh, 560px);
+  border-radius: var(--radius-lg);
+  overflow: hidden;
+  background: var(--surface-sunken);
+  border: 1px solid var(--border-subtle);
+  /* 不再有旋转/缩放，触屏应当能正常上下滚页，而不是被画布吃掉手势。 */
+  touch-action: pan-y;
+}
+.keyboard-3d canvas { display: block; }
+
+/* 展示模式：一块深色舞台。键帽是浅色实物，暗底把发光与轮廓衬出来——
+ * 同一张卡在浅底上看着像"白键盘贴在白纸上"，暗底才有产品图的分量。 */
+.keyboard-3d--showcase {
+  background:
+    radial-gradient(120% 90% at 50% 18%, #3a2c22 0%, #241b16 46%, #17110d 100%);
+  border-color: rgba(255, 240, 224, .1);
+  box-shadow: inset 0 1px 0 rgba(255, 246, 232, .06);
+}
+/* 暗舞台上数字本就不显示；万一调色板翻转（深色主题），保证文字仍然是奶白。 */
+.keyboard-3d--showcase .keyboard-3d__label { color: #fff8ef; }
+
+/* 键面数字叠层。屏幕空间的 HTML，指针事件穿透到画布，点选仍走 canvas 的 raycast。 */
+.keyboard-3d__labels {
+  position: absolute;
+  inset: 0;
+  overflow: hidden;
+  pointer-events: none;
+}
+.keyboard-3d__label {
+  position: absolute;
+  left: 0;
+  top: 0;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 1px;
+  line-height: 1;
+  color: #2f3442;
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+  will-change: transform;
+  pointer-events: none;
+}
+.keyboard-3d__label-name {
+  font-size: 0.66em;
+  opacity: 0.72;
+}
+.keyboard-3d__label-value {
+  font-weight: 600;
+}
+
+/* 悬停气泡：键面只印热点读数，其余键的**确切数值**在这里给。
+ * 用固定深色而不是跟随主题：它浮在 3D 画面之上，浅底深底都得压得住。 */
+.keyboard-3d__tip {
+  position: absolute;
+  left: 0;
+  top: 0;
+  z-index: 3;
+  padding: 6px 10px;
+  border-radius: var(--radius-full);
+  background: rgba(36, 26, 18, .92);
+  color: #fff6ea;
+  font-family: var(--font-small);
+  font-size: 15px;
+  font-weight: var(--weight-semibold);
+  letter-spacing: .01em;
+  white-space: nowrap;
+  pointer-events: none;
+  box-shadow: 0 6px 20px rgba(24, 16, 10, .28);
+  transition: opacity var(--duration-fast) var(--ease-out);
+}
+
+.keyboard-3d__fallback {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: var(--space-4);
+  text-align: center;
+  color: var(--text-secondary);
+  font-size: var(--text-sm);
+}
+
+@media (max-width: 767px) {
+  .keyboard-3d { height: clamp(240px, 40vh, 360px); }
+}

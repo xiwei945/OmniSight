@@ -186,6 +186,9 @@ _STATIC_TYPES = (
     ("text/css", ".css"),
     ("image/svg+xml", ".svg"),
     ("application/json", ".json"),
+    # 3D 键盘模型。GLTFLoader 按 arraybuffer 读，MIME 不参与分支，但注册它让
+    # 响应头如实描述内容（`nosniff` 下尤其该如此）。
+    ("model/gltf-binary", ".glb"),
 )
 
 
@@ -245,7 +248,7 @@ def _register_routes(app: Flask, context: AppContext) -> None:
             # 某一色，而那正是"跟随系统"要避免的。热力色同理：``blue`` 是默认值，
             # 只有 ``warm`` 需要属性（tokens.css 里 ``[data-heat="warm"]`` 是唯一选择器）。
             theme=theme if theme in ("light", "dark") else "",
-            heat="warm" if heat == "warm" else "",
+            heat=heat if heat in ("blue", "warm") else "",
             token=request.args.get("token", ""),
             bundle=read_bundle(Path(app.static_folder or "."), entry),
         )

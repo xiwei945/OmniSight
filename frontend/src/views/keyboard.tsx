@@ -4,7 +4,7 @@
 // 与每日日历。合起来正好是一屏：
 //
 //   按键跟踪                                    更新于 …   ← .section-heading + 范围选择器
-//   ┌ 键盘热力图 · 颜色越深使用越多      少 ▢▢▢▢ 多 ┐
+//   ┌ 键盘热力图 · 颜色越暖使用越多      冷 ▢▢▢▢ 暖 ┐
 //   │ 拟物机身：42px 键帽 / 7px 间隙 / 键名 12px    │
 //   │ 按键次数 · 活跃键位 · 平均时长 · 最长按压     │  ← 四格摘要（Quad）
 //   时间热力图
@@ -18,7 +18,7 @@
 //      不是两个功能——旧版把它塞在页面最下方一个独立面板里，还需要另外连上 TimeLens。
 //   3. 时间分布四个粒度**一次请求取回**（`view=hours,days,months,years`），因此四张卡
 //      同屏铺开不多一次往返——旧版首屏为此发 4 个请求，而我们原先只画当前选中的那一个。
-import { useState } from 'react';
+import { Suspense, lazy, useEffect, useState } from 'react';
 import { createPortal } from 'react-dom';
 import { CalendarHeatmap } from '../charts/CalendarHeatmap.tsx';
 import { Chart } from '../charts/Chart.tsx';
@@ -30,6 +30,10 @@ import { hideChartTooltip, showChartTooltip } from '../components/chart-hover.ts
 import { HeatStrip } from '../components/HeatStrip.tsx';
 import { Icon } from '../components/Icon.tsx';
 import { HeatLegend, KeyboardView } from '../components/KeyboardView.tsx';
+import { KeyTable, Orphans } from '../components/KeyboardReadouts.tsx';
+import { ReplayBar } from '../components/ReplayBar.tsx';
+import { stop as stopReplay } from '../core/replay.ts';
+import { webglAvailable } from '../core/webgl.ts';
 import { METRIC_SLOT_ID, Updated } from '../components/PeriodNav.tsx';
 import { Quad } from '../components/Quad.tsx';
 import { Segmented } from '../components/controls.tsx';
@@ -73,6 +77,30 @@ const DENSITIES = [
   { id: 'standard', name: '标准' },
   { id: 'compact', name: '紧凑' },
 ];
+
+/** 渲染方式：平面 DOM 键盘（默认回退）与 3D 模型。3D 是增强，不是唯一路径。 */
+type Surface = '3d' | 'flat';
+const SURFACES = [
+  { id: '3d', name: '3D' },
+  { id: 'flat', name: '平面' },
+];
+
+/**
+ * 3D 的两种读法（同一份数据，两种观感）：
+ *   日常 —— 中性键帽染热力色，读数最清楚；
+ *   展示 —— 保留猫耳键盘本身的奶油/巧克力本色，热度用发光表达，适合投影/截图。
+ * 只在 3D 下出现：平面视图本身就是"读数优先"，没有第二种表达的必要。
+ */
+type Look = 'heat' | 'showcase';
+const LOOKS = [
+  { id: 'heat', name: '日常' },
+  { id: 'showcase', name: '展示' },
+];
+
+/** three 只在真的切到 3D 时才加载（`vite` 会把下面这个动态导入拆成单独的 chunk）。 */
+const Keyboard3D = lazy(() =>
+  import('../components/Keyboard3D.tsx').then((module) => ({ default: module.Keyboard3D })),
+);
 
 /**
  * 时间分布的两种形式（18 文档 批 7）。**同一份数据两种读法**：柱状回答"多与少"（要比较
@@ -150,6 +178,11 @@ export function View() {
   // 密度是真实的取舍：标准优先保证键面数值 ≥11px，紧凑优先让整块键盘不横向滚动
   // （14 文档 §4.4）。交给用户比替他猜好。它只改渲染，所以留在卡头。
   const [density, setDensity] = useState<'standard' | 'compact'>('standard');
+  // 渲染方式。默认跟随环境：有 WebGL 就用 3D，没有（老机器/软件渲染被禁）就回退平面。
+  // 这是**增强开关**，不是功能分叉——平面视图始终可用，表格孪生两种都渲染。
+  const [surface, setSurface] = useState<Surface>(() => (webglAvailable() ? '3d' : 'flat'));
+  // 3D 的两种观感（见 LOOKS）。它只改渲染，所以和 surface 一样留在视图内部状态。
+  const [look, setLook] = useState<Look>('heat');
   // 时间尺度**只改这一张图怎么画**，不改取哪一批数（四个粒度是同一次请求取回的），
   // 因此它是视图内部状态、留在卡头，不进 store 也不进 URL（14 文档 §4.1 的分界）。
   const [grain, setGrain] = useState<Grain>('days');
@@ -161,6 +194,25 @@ export function View() {
   const error = heatmap.error || layout.error;
   const keyboardOk = capabilityOf(capabilities, 'keyboard');
   const notice = noticeFor(degraded, 'keyboard');
+
+  // 离开键盘视图时停掉回放，否则 rAF 会在后台空转，事件也会打到已卸载的键帽上。
+  useEffect(() => () => stopReplay(), []);
+
+  const keyValues = new Map((heatmap.data?.keys || []).map((key) => [key.id, key]));
+  // 3D 模型覆盖哪些键、当前布局里又有哪些键，两者要能对上。**由组件加载完回报**，
+  // 而不是前端维护一份模型键名的副本（那份副本迟早与资产对不上）。
+  const [modelKeyIds, setModelKeyIds] = useState<Set<string> | null>(null);
+  const absentFromModel = modelKeyIds
+    ? (heatmap.data?.keys || []).reduce(
+        (count, key) => (modelKeyIds.has(key.id) ? count : count + 1),
+        0,
+      )
+    : 0;
+
+  const selectKey = (keyId: string) => {
+    setState('selectedKeyId', keyId);
+    loadKeyDetail(keyId);
+  };
 
   return (
     <>
@@ -201,18 +253,38 @@ export function View() {
       >
         <Card
           title="键盘热力图"
-          subtitle="颜色越深，使用次数越多"
+          subtitle="颜色由冷到暖，使用次数越多"
           controls={
             keyboardOk ? (
               <>
                 <HeatLegend metric={metric} scale={heatmap.data?.scale} />
                 <Segmented
-                  items={DENSITIES}
-                  active={density}
-                  onPick={(id) => setDensity(id as 'standard' | 'compact')}
+                  items={SURFACES}
+                  active={surface}
+                  onPick={(id) => setSurface(id as Surface)}
                   small
-                  label="键盘密度"
+                  label="键盘渲染方式"
                 />
+                {/* 观感只对 3D 有意义：平面视图本身已经是"读数优先"那一路。 */}
+                {surface === '3d' ? (
+                  <Segmented
+                    items={LOOKS}
+                    active={look}
+                    onPick={(id) => setLook(id as Look)}
+                    small
+                    label="3D 观感"
+                  />
+                ) : null}
+                {/* 密度只影响平面键帽的尺寸，3D 下不适用。 */}
+                {surface === 'flat' ? (
+                  <Segmented
+                    items={DENSITIES}
+                    active={density}
+                    onPick={(id) => setDensity(id as 'standard' | 'compact')}
+                    small
+                    label="键盘密度"
+                  />
+                ) : null}
               </>
             ) : null
           }
@@ -231,16 +303,37 @@ export function View() {
           ) : !layout.data || !heatmap.data ? (
             <SkeletonRows count={1} />
           ) : (
-            <KeyboardView
-              layout={layout.data}
-              heatmap={heatmap.data}
-              metric={metric}
-              density={density}
-              onSelectKey={(keyId) => {
-                setState('selectedKeyId', keyId);
-                loadKeyDetail(keyId);
-              }}
-            />
+            <>
+              {surface === '3d' ? (
+                <Suspense fallback={<SkeletonRows count={1} />}>
+                  <Keyboard3D
+                    heatmap={heatmap.data}
+                    metric={metric}
+                    mode={look}
+                    onSelectKey={selectKey}
+                    onKeysLoaded={(ids) => setModelKeyIds(new Set(ids))}
+                  />
+                </Suspense>
+              ) : (
+                <KeyboardView
+                  layout={layout.data}
+                  heatmap={heatmap.data}
+                  metric={metric}
+                  density={density}
+                  onSelectKey={selectKey}
+                />
+              )}
+              {/* 模型覆盖不到当前布局的键时说明一句，否则读者会以为自己在那些键上没敲过字。 */}
+              {surface === '3d' && absentFromModel > 0 ? (
+                <div className="card__hint">
+                  3D 模型是全尺寸 ANSI 104，当前布局里有 {absentFromModel} 个键位不在模型上，
+                  读数见下方表格视图
+                </div>
+              ) : null}
+              <ReplayBar />
+              <Orphans keys={heatmap.data.orphan_keys} metric={metric} />
+              <KeyTable values={keyValues} metric={metric} />
+            </>
           )}
         </Card>
       </Section>

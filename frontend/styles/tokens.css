@@ -13,71 +13,84 @@
 :root {
   color-scheme: light;
 
-  /* 中性灰阶 —— UI 骨架专用，绝不用于数据编码 */
+  /* 奶油拿铁（latte）。整套中性色带一点暖：纸感底、奶白卡、焦糖强调色。
+   * 灰阶本身仍是中性的，暖调只出现在表面与强调色上——否则图表里的分类色会被
+   * 一层黄膜罩住，越看越糊。 */
   --gray-0:  #ffffff;
-  --gray-25: #fbfbfd;
-  --gray-50: #f5f5f7;
-  --gray-100:#eeeef1;
-  --gray-150:#e6e6ea;
-  --gray-200:#d8d8de;
-  --gray-300:#c2c2ca;
-  --gray-400:#9a9aa3;
-  --gray-500:#77777d;
-  --gray-600:#5b5b61;
-  --gray-700:#3d3d42;
-  --gray-800:#2a2a2e;
-  --gray-900:#1d1d1f;
+  --gray-25: #fdfbf7;
+  --gray-50: #faf5ec;
+  --gray-100:#f3ebde;
+  --gray-150:#ece1d0;
+  --gray-200:#ddcfba;
+  --gray-300:#c6b49c;
+  --gray-400:#9a8a79;
+  --gray-500:#7b6a59;
+  --gray-600:#645547;
+  --gray-700:#453a30;
+  --gray-800:#2f2721;
+  --gray-900:#241e19;
 
-  --surface-page:    var(--gray-50);
-  --surface-card:    var(--gray-0);
-  --surface-sunken:  var(--gray-100);
-  --surface-hover:   rgba(0, 0, 0, .035);
-  --surface-active:  rgba(0, 0, 0, .06);
-  --surface-overlay: rgba(255, 255, 255, .86);
-  --surface-scrim:   rgba(20, 20, 24, .32);
+  --surface-page:    #faf6ee;
+  --surface-card:    #fffdf9;
+  --surface-sunken:  #f3ebde;
+  --surface-hover:   rgba(74, 52, 30, .045);
+  --surface-active:  rgba(74, 52, 30, .075);
+  --surface-overlay: rgba(255, 253, 249, .88);
+  --surface-scrim:   rgba(38, 27, 18, .34);
   /* 全屏加载遮罩（17 文档 §5.1）。前身用 rgba(245,245,247,.52) + blur(5px)，也就是
    * "页底色兑一半透明"。写成 color-mix 之后**深浅两套自动成立**——`--surface-page`
    * 本身分主题，因此这里不需要深色覆盖，深色下它自然变成暗纱而不是白纱。 */
   --surface-veil:    color-mix(in srgb, var(--surface-page) 62%, transparent);
 
-  --text-primary:   var(--gray-900);
-  --text-secondary: #5f5f66;
-  --text-tertiary:  #6b6b73;
+  --text-primary:   #241e19;
+  --text-secondary: #5f5044;
+  --text-tertiary:  #6f5f50;
   --text-inverse:   var(--gray-0);
 
-  --border-subtle:  rgba(60, 60, 67, .10);
-  --border-default: rgba(60, 60, 67, .16);
-  --border-strong:  rgba(60, 60, 67, .28);
+  --border-subtle:  rgba(74, 52, 30, .12);
+  --border-default: rgba(74, 52, 30, .18);
+  --border-strong:  rgba(74, 52, 30, .30);
 
-  --accent:        #2f7cf6;
-  --accent-hover:  #1f6ae4;
-  --accent-subtle: #e8f1fe;
-  --accent-text:   #1257c4;
+  --accent:        #c07a44;
+  --accent-hover:  #a9622f;
+  --accent-subtle: #f8e9d7;
+  --accent-text:   #8a4a20;
 
   /* 身份色 —— 只回答"这是哪一类"。四个带彩度的槽位两两都过 all-pairs 校验
    * （CVD ΔE ≥ 6、正常视觉 ΔE ≥ 15），因为环形/列表里任意两类都可能并置。
    * 后两个是**去强调灰**：刻意不带彩度，职责就是不承载身份（14 文档 §3.2）。 */
-  --cat-development:   #be2038;
-  --cat-productivity:  #2f7cf6;
-  --cat-communication: #16a394;
-  --cat-entertainment: #d37819;
-  --cat-system:        #57575c;
-  --cat-uncategorized: #919197;
+  --cat-development:   #b8442e;
+  --cat-productivity:  #4a72a8;
+  --cat-communication: #1f9c6f;
+  --cat-entertainment: #bf8318;
+  --cat-system:        #645547;
+  --cat-uncategorized: #9a8a79;
 
-  /* 度量色 —— "这是哪个量"。时间是蓝，按键是色阶的中段（14 文档 §3.2）。 */
-  --data-time: #2f7cf6;
-  --data-keys: #7e438c;
+  /* 度量色 —— "这是哪个量"。时间是暮蓝，按键是梅子紫（14 文档 §3.2）。 */
+  --data-time: #4a72a8;
+  --data-keys: #8a5a78;
 
-  /* 量级色阶 —— 单色相 H320，**5 个离散档**。
+  /* 量级色阶 —— **冷→暖**（蓝到锈橙），5 个离散档。浅色主题下亮度**递减**（最浅档压在
+   * 白卡上仍够 2:1，最深两档反过来靠白字），单调性与相邻档间距由
+   * `tests/unit/test_design_tokens.py` 机械核对。
    * 零态不在这里：它是承载面本身（键面 = 卡片色，格子 = --heat-0）。
    * --heat-0 只给格子用；键面的零态是不填色（14 文档 §2.4、§2.16）。 */
   --heat-0: var(--surface-sunken);
-  --heat-1: #cf8fde;
-  --heat-2: #b375c2;
-  --heat-3: #995ba6;
-  --heat-4: #7e438c;
-  --heat-5: #652a72;
-  --heat-ink: #ffffff;         /* 第 3 档起的数字颜色（翻转点见 key-cap.css） */
+  --heat-1: #c08a5a;
+  --heat-2: #a3642f;
+  --heat-3: #8e4f26;
+  --heat-4: #6c3714;
+  --heat-5: #4a240c;
+  --heat-ink: #ffffff;         /* 最深两档的数字颜色（翻转点见 key-cap.css） */
+
+  /* 3D 键帽专用色阶（见 src/domain/keyboard-cat.ts）。**深浅主题共用这一套**：
+   * 键帽是浅色实物，深色主题若跟着反相，"没按过"会和最常按的键一样亮，热力图就失去方向。
+   * 备选主题在文件末尾各自覆盖。 */
+  --kb-heat-1: #c08a5a;
+  --kb-heat-2: #a3642f;
+  --kb-heat-3: #8e4f26;
+  --kb-heat-4: #6c3714;
+  --kb-heat-5: #4a240c;
 
   --status-ok:    #1a9d54;
   --status-warn:  #d98613;
@@ -94,8 +107,8 @@
 
   /* 键帽（14 文档 §3.4）。硬底影是键帽的侧壁，顶棱是打在帽面上的光——
    * 两者都是中性色，不参与任何数据编码，所以色阶换了它们也不动。 */
-  --key-wall:  #c9c9d1;
-  --key-gloss: rgba(255, 255, 255, .72);
+  --key-wall:  #d8c8b2;
+  --key-gloss: rgba(255, 252, 245, .8);
   --key-tray:  var(--surface-sunken);
 
   /* 分段器与切换器的槽（17 文档 §5.0）。前身用 `#e7e7ec`，`--gray-150` 是 `#e6e6ea`
@@ -106,10 +119,10 @@
    * 三段渐变取灰阶相邻三档，边取再深一档。顶棱复用 --key-gloss（它本来就是"打在
    * 帽面上的光"这个用途），落影复用 --shadow-lg，外圈光晕由 --tray-edge 兑透明得到。
    * 于是"搬机身"没有引入任何新的十六进制色值。 */
-  --tray-face-top:    var(--gray-100);
-  --tray-face-mid:    var(--gray-150);
-  --tray-face-bottom: var(--gray-200);
-  --tray-edge:        var(--gray-300);
+  --tray-face-top:    #f6eee1;
+  --tray-face-mid:    #efe5d5;
+  --tray-face-bottom: #e6d9c6;
+  --tray-edge:        #cdbaa0;
 
   /* 排版（14 文档 §3.3）。Segoe UI Variable 在 Windows 11 上分三个族发行，设计意图
    * 就是分档使用：Small 给 ≤12px（字重更实、字腔更开），Text 给 13–20px，Display
@@ -170,49 +183,49 @@
 @media (prefers-color-scheme: dark) {
   :root:not([data-theme="light"]) {
     color-scheme: dark;
-    --surface-page:    #16161a;
-    --surface-card:    #202024;
-    --surface-sunken:  #2a2a2f;
-    --surface-hover:   rgba(255,255,255,.05);
-    --surface-active:  rgba(255,255,255,.09);
-    --surface-overlay: rgba(32,32,36,.88);
-    --surface-scrim:   rgba(0, 0, 0, .52);
+    --surface-page:    #171310;
+    --surface-card:    #211b16;
+    --surface-sunken:  #2b231c;
+    --surface-hover:   rgba(255,240,224,.05);
+    --surface-active:  rgba(255,240,224,.09);
+    --surface-overlay: rgba(33,27,22,.9);
+    --surface-scrim:   rgba(0, 0, 0, .54);
 
-    --text-primary:   #f2f2f5;
-    --text-secondary: #a8a8b2;
-    --text-tertiary:  #93939e;
+    --text-primary:   #f6ede2;
+    --text-secondary: #c3b4a4;
+    --text-tertiary:  #a89787;
 
-    --border-subtle:  rgba(255,255,255,.07);
-    --border-default: rgba(255,255,255,.12);
-    --border-strong:  rgba(255,255,255,.22);
+    --border-subtle:  rgba(255,240,224,.08);
+    --border-default: rgba(255,240,224,.14);
+    --border-strong:  rgba(255,240,224,.24);
 
-    --accent:        #5b9bff;
-    --accent-hover:  #7fb0ff;
-    --accent-subtle: #1c2c4a;
-    --accent-text:   #8fbaff;
+    --accent:        #e0a878;
+    --accent-hover:  #eec08f;
+    --accent-subtle: #3a2a1c;
+    --accent-text:   #f0bd8c;
 
     /* 深色不是浅色的翻转：这六个值按深色明度带（OKLCH L 0.48–0.67）重新取，
      * 不是"把浅色调亮"——后者会让小色块看起来发荧光（14 文档 §3.2）。 */
-    --cat-development:   #c82d40;
-    --cat-productivity:  #4c8df9;
-    --cat-communication: #1ea697;
-    --cat-entertainment: #d67918;
-    --cat-system:        #aaaab0;
-    --cat-uncategorized: #6e6e73;
+    --cat-development:   #d9614a;
+    --cat-productivity:  #8fb3e0;
+    --cat-communication: #3aa87c;
+    --cat-entertainment: #dda23c;
+    --cat-system:        #b3a494;
+    --cat-uncategorized: #857565;
 
-    --data-time: #4c8df9;
-    --data-keys: #a86ab6;
+    --data-time: #8fb3e0;
+    --data-keys: #b07f9c;
 
     /* 深色的色阶是从暗爬到亮，所以零态必须坐在第 1 档**下面**——用 --surface-sunken
-     * （#2a2a2f，比卡片亮）会让零格反而比"按过一次"更亮，对比只有 1.87:1。
-     * 这里取一个比卡片更沉的灰：格子仍然看得见，而第 1 档从它里面浮起来。 */
-    --heat-0: #191920;
-    --heat-1: #773b84;
-    --heat-2: #8f539d;
-    --heat-3: #a86ab6;
-    --heat-4: #c282d0;
-    --heat-5: #dc9beb;
-    --heat-ink: #14141a;
+     * （比卡片亮）会让零格反而比"按过一次"更亮。这里取一个比卡片更沉的褐：
+     * 格子仍然看得见，而第 1 档从它里面浮起来。 */
+    --heat-0: #1a1511;
+    --heat-1: #684732;
+    --heat-2: #7f583c;
+    --heat-3: #ab7548;
+    --heat-4: #c08a5a;
+    --heat-5: #eab077;
+    --heat-ink: #171310;
 
     --status-ok:    #3ddc84;
     --status-warn:  #f5a55c;
@@ -226,8 +239,8 @@
     --shadow-lg: 0 12px 32px rgba(0,0,0,.45);
     --shadow-focus: 0 0 0 3px var(--accent-subtle), 0 0 0 1px var(--accent);
 
-    --key-wall:  #101014;
-    --key-gloss: rgba(255, 255, 255, .06);
+    --key-wall:  #120e0a;
+    --key-gloss: rgba(255, 246, 232, .06);
 
     /* 控件槽与键盘机身（17 文档 §5.1）。深色下不能沿用浅色灰阶——`--gray-*` 是一条
      * 浅色坡道，直接用会在暗卡上出现一块亮面。这里改指深色的三层表面：机身从
@@ -242,49 +255,49 @@
 
 :root[data-theme="dark"] {
   color-scheme: dark;
-  --surface-page:    #16161a;
-  --surface-card:    #202024;
-  --surface-sunken:  #2a2a2f;
-  --surface-hover:   rgba(255,255,255,.05);
-  --surface-active:  rgba(255,255,255,.09);
-  --surface-overlay: rgba(32,32,36,.88);
-  --surface-scrim:   rgba(0, 0, 0, .52);
+  --surface-page:    #171310;
+  --surface-card:    #211b16;
+  --surface-sunken:  #2b231c;
+  --surface-hover:   rgba(255,240,224,.05);
+  --surface-active:  rgba(255,240,224,.09);
+  --surface-overlay: rgba(33,27,22,.9);
+  --surface-scrim:   rgba(0, 0, 0, .54);
 
-  --text-primary:   #f2f2f5;
-  --text-secondary: #a8a8b2;
-  --text-tertiary:  #93939e;
+  --text-primary:   #f6ede2;
+  --text-secondary: #c3b4a4;
+  --text-tertiary:  #a89787;
 
-  --border-subtle:  rgba(255,255,255,.07);
-  --border-default: rgba(255,255,255,.12);
-  --border-strong:  rgba(255,255,255,.22);
+  --border-subtle:  rgba(255,240,224,.08);
+  --border-default: rgba(255,240,224,.14);
+  --border-strong:  rgba(255,240,224,.24);
 
-  --accent:        #5b9bff;
-  --accent-hover:  #7fb0ff;
-  --accent-subtle: #1c2c4a;
-  --accent-text:   #8fbaff;
+  --accent:        #e0a878;
+  --accent-hover:  #eec08f;
+  --accent-subtle: #3a2a1c;
+  --accent-text:   #f0bd8c;
 
   /* 深色不是浅色的翻转：这六个值按深色明度带（OKLCH L 0.48–0.67）重新取，
    * 不是"把浅色调亮"——后者会让小色块看起来发荧光（14 文档 §3.2）。 */
-  --cat-development:   #c82d40;
-  --cat-productivity:  #4c8df9;
-  --cat-communication: #1ea697;
-  --cat-entertainment: #d67918;
-  --cat-system:        #aaaab0;
-  --cat-uncategorized: #6e6e73;
+  --cat-development:   #d9614a;
+  --cat-productivity:  #8fb3e0;
+  --cat-communication: #3aa87c;
+  --cat-entertainment: #dda23c;
+  --cat-system:        #b3a494;
+  --cat-uncategorized: #857565;
 
-  --data-time: #4c8df9;
-  --data-keys: #a86ab6;
+  --data-time: #8fb3e0;
+  --data-keys: #b07f9c;
 
   /* 深色的色阶是从暗爬到亮，所以零态必须坐在第 1 档**下面**——用 --surface-sunken
-   * （#2a2a2f，比卡片亮）会让零格反而比"按过一次"更亮，对比只有 1.87:1。
-   * 这里取一个比卡片更沉的灰：格子仍然看得见，而第 1 档从它里面浮起来。 */
-  --heat-0: #191920;
-  --heat-1: #773b84;
-  --heat-2: #8f539d;
-  --heat-3: #a86ab6;
-  --heat-4: #c282d0;
-  --heat-5: #dc9beb;
-  --heat-ink: #14141a;
+   * （比卡片亮）会让零格反而比"按过一次"更亮。这里取一个比卡片更沉的褐：
+   * 格子仍然看得见，而第 1 档从它里面浮起来。 */
+  --heat-0: #1a1511;
+  --heat-1: #684732;
+  --heat-2: #7f583c;
+  --heat-3: #ab7548;
+  --heat-4: #c08a5a;
+  --heat-5: #eab077;
+  --heat-ink: #171310;
 
   --status-ok:    #3ddc84;
   --status-warn:  #f5a55c;
@@ -298,8 +311,8 @@
   --shadow-lg: 0 12px 32px rgba(0,0,0,.45);
   --shadow-focus: 0 0 0 3px var(--accent-subtle), 0 0 0 1px var(--accent);
 
-  --key-wall:  #101014;
-  --key-gloss: rgba(255, 255, 255, .06);
+  --key-wall:  #120e0a;
+  --key-gloss: rgba(255, 246, 232, .06);
 
   /* 控件槽与键盘机身（17 文档 §5.1）。深色下不能沿用浅色灰阶——`--gray-*` 是一条
    * 浅色坡道，直接用会在暗卡上出现一块亮面。这里改指深色的三层表面：机身从
@@ -311,9 +324,27 @@
   --tray-edge:        var(--border-strong);
 }
 
-/* 色阶备选主题（06 文档 §3.1、14 文档 §3.1）。默认是紫红 H320；这两档只换色阶，
- * 不换主色。TODO(批 1 收尾)：两条备选的最浅档目前对表面不足 2:1，需按序数标尺重取
- * ——与默认色阶同一套明度结构（14 文档 §8.2 的 --ordinal 校验）。 */
+/* 色阶备选主题（06 文档 §3.1、14 文档 §3.1）。
+ *
+ * 默认这一套是**奶油拿铁**——与 3D 键盘的奶白/巧克力键帽同一族，冷蓝留在
+ * `data-heat="blue"` 里给习惯旧配色的人。三套只换色阶，不换主色。
+ * 三套都按同一套明度结构取值：浅色下亮度递减、最浅档对卡片 ≥2:1；
+ * 深色下亮度递增、最浅档对卡片仍 ≥2:1（由 tests/unit/test_design_tokens.py 核对）。 */
+:root[data-heat="blue"] {
+  --heat-1: #84aad0;
+  --heat-2: #5f88bd;
+  --heat-3: #96622a;
+  --heat-4: #8f4314;
+  --heat-5: #75300f;
+  --heat-ink: #ffffff;
+  /* 3D 用同一族的浅色调（键帽是实物，详见 :root 里的说明）。 */
+  --kb-heat-1: #a8c6e2;
+  --kb-heat-2: #84aad0;
+  --kb-heat-3: #5f88bd;
+  --kb-heat-4: #40628f;
+  --kb-heat-5: #2b4568;
+}
+
 :root[data-heat="warm"] {
   --heat-1: #fdeacc;
   --heat-2: #fbcf8d;
@@ -321,6 +352,11 @@
   --heat-4: #dd7f1b;
   --heat-5: #a75410;
   --heat-ink: #ffffff;
+  --kb-heat-1: #fbcf8d;
+  --kb-heat-2: #f2a94e;
+  --kb-heat-3: #dd7f1b;
+  --kb-heat-4: #b7670f;
+  --kb-heat-5: #7d3f08;
 }
 
 @media (prefers-reduced-motion: reduce) {

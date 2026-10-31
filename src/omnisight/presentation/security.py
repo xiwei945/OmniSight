@@ -31,12 +31,16 @@ ALLOWED_HOSTS = frozenset({"127.0.0.1", "localhost", "::1", "[::1]"})
 TOKEN_HEADER = "X-OmniSight-Token"
 RUNTIME_FILENAME = "runtime.json"
 
+#: ``connect-src`` / ``img-src`` 里的 ``blob:`` 是 3D 键盘模型带来的：glTF 把贴图**内嵌**
+#: 在二进制里，three 的 GLTFLoader 会把它们解码成 Blob 再加载，于是要允许同源 blob。
+#: 这不放宽威胁模型——blob 只能由**本页自己**创建（其它源无法在这个上下文里造出一个
+#: 我们信任的 blob URL），而脚本的来源仍然被 ``script-src 'self'`` 锁死。
 CSP = (
     "default-src 'self'; "
     "script-src 'self'; "
     "style-src 'self'; "
-    "img-src 'self' data:; "
-    "connect-src 'self'; "
+    "img-src 'self' data: blob:; "
+    "connect-src 'self' blob:; "
     "frame-ancestors 'none'; "
     "base-uri 'none'; "
     "form-action 'none'"

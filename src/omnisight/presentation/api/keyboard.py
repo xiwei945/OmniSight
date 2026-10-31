@@ -56,6 +56,28 @@ def register(app: Flask, context: Any) -> None:
         warnings = payload.pop("warnings", [])
         return jsonify({**envelope(context, warnings=warnings), **payload})
 
+    @app.get("/api/v1/keyboard/replay")
+    def keyboard_replay():
+        day = (request.args.get("date") or context.services.context.today().isoformat()).strip()
+        try:
+            from datetime import date
+
+            date.fromisoformat(day)
+        except ValueError as exc:
+            raise ApiError("日期格式应为 YYYY-MM-DD", code="invalid_param", field="date") from exc
+        payload = context.services.keyboard.replay_day(day)
+        if payload is None:
+            return jsonify(
+                {
+                    **envelope(context),
+                    "available": False,
+                    "events": [],
+                    "truncated": False,
+                    "limit": 0,
+                }
+            )
+        return jsonify({**envelope(context), "available": True, **payload})
+
     @app.get("/api/v1/keyboard/keys/<key_id>")
     def keyboard_key(key_id: str):
         period = resolved_period(context, request.args)
