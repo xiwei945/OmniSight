@@ -71,23 +71,65 @@ def scrub_process_env() -> None:
 #: 而"第二个实例"与"接班的实例"在锁面前长得一模一样。
 TAKEOVER_FLAG = "--takeover"
 
+#: 开发模式下那支会自己把 ``src`` 塞进 ``sys.path`` 的启动器（仓库根）。
+#:
+#: **为什么不直接执行 ``main.py``。** ``main.py`` 是**打包入口**：它 ``from omnisight.app
+#: import run`` 之前不做任何路径装配，前提是包已经躺在解释器的搜索路径里——打包产物满足
+#: 这个前提（归档里就有那个包），而开发环境只装依赖、不装包。于是
+#: ``pythonw main.py --takeover`` 当场 ``ModuleNotFoundError: No module named 'omnisight'``，
+#: 而 pythonw 没有控制台，这一死完全静默：托盘菜单点下去，图标消失，什么都不再起来
+#: （2026-11-01 现场，``%TEMP%\omnisight-startup-error.txt`` 留下了那条 traceback）。
+#:
+#: 这个答案与自启项必须一致：``adapters/windows/autostart.startup_command`` 也指向它。
+#: 两处都在回答"开发模式下怎么把这一份源码再启动一次"，答案分家过一次，代价就是管理员
+#: 模式重启静默失效。
+DEV_LAUNCHER_NAME = "run_omnisight.pyw"
+
+_UNSET: object = object()
+
+
+def dev_launcher() -> Path | None:
+    """仓库根那支启动器；打包版、或文件不在时返回 ``None``。
+
+    只在解释器的搜索路径里找不到 ``omnisight`` 时才需要它，而"找不到"这件事没法在运行时
+    可靠地问出来（问的方式本身就要先 import）——所以判据是"有没有那支文件"，与
+    ``autostart._dev_launcher`` 完全相同。
+    """
+    if getattr(sys, "frozen", False):
+        return None
+    from . import paths  # 惰性：paths 只依赖 sys/os，但 core 内部不想在导入期多一条边
+
+    candidate = paths.exe_dir() / DEV_LAUNCHER_NAME
+    return candidate if candidate.is_file() else None
+
 
 def arguments(
     argv: Sequence[str] | None = None,
     *,
     frozen: bool | None = None,
     executable: str | None = None,
+    launcher: Path | None | object = _UNSET,
 ) -> tuple[str, list[str]]:
     """接班实例要执行的 ``(程序, 参数列表)``。
 
     **不带上本次运行的其他参数。** 目前只有 ``--autostart``，而它的语义是"我是被自启项
     拉起来的"；用户手动重启显然不是那回事。
+
+    ``launcher`` 可注入：开发模式下默认探测仓库根那支启动器（见
+    :data:`DEV_LAUNCHER_NAME`），测试要钉住"探测不到时退回 ``main.py``"这条兜底，
+    传 ``None`` 即可。
     """
     argv = list(sys.argv if argv is None else argv)
     frozen = getattr(sys, "frozen", False) if frozen is None else frozen
     program = str(Path(executable or sys.executable).resolve())
     if frozen:
         return program, [TAKEOVER_FLAG]
+    if launcher is _UNSET:
+        launcher = dev_launcher()
+    if launcher is not None:
+        # 启动器把 ``src`` 接进 ``sys.path`` 之后才 ``runpy`` 执行 ``main.py``，因此它看到的
+        # ``sys.argv`` 就是这里拼出来的那一份——``--takeover`` 原样传下去。
+        return program, [str(Path(str(launcher)).resolve()), TAKEOVER_FLAG]
     script = argv[0] if argv else ""
     if not script or Path(script).name == "__main__.py":
         # ``python -m omnisight``：argv[0] 是包内 ``__main__.py`` 的路径，而直接执行
@@ -119,9 +161,11 @@ def spawn() -> subprocess.Popen[bytes] | None:
 
 __all__ = [
     "BOOTLOADER_ENV",
+    "DEV_LAUNCHER_NAME",
     "TAKEOVER_FLAG",
     "arguments",
     "child_environment",
+    "dev_launcher",
     "scrub_process_env",
     "spawn",
 ]

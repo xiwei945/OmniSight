@@ -16,6 +16,9 @@ __pycache__/
 *.py[cod]
 *.egg-info/
 .pytest_cache/
+# pytest 的临时根目录（``pytest-of-<user>``）：一旦让它进了版本库，一次提交就会吞掉上千个
+# 测试临时文件，而真正的改动泡在里面看不见。
+pytest-of-*/
 .ruff_cache/
 .coverage
 coverage.xml

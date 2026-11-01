@@ -24,6 +24,8 @@ import logging
 import sys
 from pathlib import Path
 
+from ...core import relaunch
+
 logger = logging.getLogger(__name__)
 
 RUN_KEY = r"Software\Microsoft\Windows\CurrentVersion\Run"
@@ -31,7 +33,9 @@ VALUE_NAME = "OmniSight"
 AUTOSTART_FLAG = "--autostart"
 
 #: 开发模式下那支会自己搭好 ``sys.path`` 的启动器（仓库根）。打包版里没有它。
-DEV_LAUNCHER_NAME = "run_omnisight.pyw"
+#: **与 ``core/relaunch`` 是同一个名字**：自启项与重启/提权都在回答“开发模式下怎么把这一份
+#: 源码再启动一次”，两处各写一个字面量就会各错一次（见 ``relaunch.DEV_LAUNCHER_NAME``）。
+DEV_LAUNCHER_NAME = relaunch.DEV_LAUNCHER_NAME
 
 #: 属性页「兼容性」里那个"以管理员身份运行此程序"落在这里：值名是 EXE 的完整路径，
 #: 值数据形如 ``~ RUNASADMIN``（多个兼容性层以空格分隔）。用户勾一下就会写进来。
@@ -74,11 +78,9 @@ def always_elevated_by_compat_flag(target: Path | None = None) -> bool:
 def _dev_launcher() -> Path | None:
     """仓库根那支自己搭 ``sys.path`` 的开发启动器；不在（例如包已装进解释器）返回 ``None``。"""
     try:
-        from ...core import paths
+        return relaunch.dev_launcher()
     except ImportError:  # pragma: no cover - 解释器里连 omnisight.core 都没有
         return None
-    candidate = paths.exe_dir() / DEV_LAUNCHER_NAME
-    return candidate if candidate.is_file() else None
 
 
 def startup_command() -> str:

@@ -16,6 +16,8 @@ UAC 确认框、要么什么都不做，因此这里测的是它周围那些一�
 
 from __future__ import annotations
 
+from pathlib import Path
+
 import pytest
 
 pytestmark = pytest.mark.windows_only
@@ -47,7 +49,10 @@ def test_module_invocation_relaunches_as_a_module(elevation):
     因为相对导入失败——这正是仓库根有一个独立 ``main.py`` 的原因。
     """
     program, arguments = elevation.relaunch_arguments(
-        ["E:/repo/src/omnisight/__main__.py"], frozen=False, executable="C:/py/python.exe"
+        ["E:/repo/src/omnisight/__main__.py"],
+        frozen=False,
+        executable="C:/py/python.exe",
+        launcher=None,
     )
     assert program.endswith("python.exe")
     assert arguments == ["-m", "omnisight", elevation.TAKEOVER_FLAG]
@@ -55,16 +60,45 @@ def test_module_invocation_relaunches_as_a_module(elevation):
 
 def test_a_script_entry_relaunches_that_script(elevation):
     _program, arguments = elevation.relaunch_arguments(
-        ["main.py"], frozen=False, executable="C:/py/python.exe"
+        ["main.py"], frozen=False, executable="C:/py/python.exe", launcher=None
     )
     assert arguments[0].endswith("main.py")
     assert arguments[0] != "main.py", "必须是绝对路径：新进程的工作目录未必相同"
     assert arguments[1:] == [elevation.TAKEOVER_FLAG]
 
 
+def test_development_mode_relaunches_through_the_launcher(elevation):
+    r"""开发模式下**不能**直接执行 ``main.py``。
+
+    2026-11-01 现场：托盘菜单点“以管理员身份重启”，图标消失，什么都没再起来。
+    ``%TEMP%`` 下的 ``omnisight-startup-error.txt`` 里躺着原因：
+
+        File "...\main.py", line 64, in <module>
+            from omnisight.app import run
+        ModuleNotFoundError: No module named 'omnisight'
+
+    ``main.py`` 是打包入口，它 import 之前不做任何路径装配；开发环境只装依赖、不装包。
+    仓库根那支启动器自己把 ``src`` 接进 ``sys.path``，所以接班实例必须从它进。
+    """
+    launcher = Path("E:/repo") / elevation.relaunch.DEV_LAUNCHER_NAME
+    _program, arguments = elevation.relaunch_arguments(
+        ["main.py"], frozen=False, executable="C:/py/python.exe", launcher=launcher
+    )
+    assert arguments == [str(launcher.resolve()), elevation.TAKEOVER_FLAG]
+
+
+def test_the_launcher_is_only_used_in_development_mode(elevation):
+    """打包版不能带启动器：那里根本没有那个文件，而 EXE 自己就是入口。"""
+    launcher = Path("E:/repo") / elevation.relaunch.DEV_LAUNCHER_NAME
+    _program, arguments = elevation.relaunch_arguments(
+        ["OmniSight.exe"], frozen=True, executable="C:/Apps/OmniSight.exe", launcher=launcher
+    )
+    assert arguments == [elevation.TAKEOVER_FLAG]
+
+
 def test_an_empty_argv_still_produces_a_runnable_command(elevation):
     _program, arguments = elevation.relaunch_arguments(
-        [], frozen=False, executable="C:/py/python.exe"
+        [], frozen=False, executable="C:/py/python.exe", launcher=None
     )
     assert arguments == ["-m", "omnisight", elevation.TAKEOVER_FLAG]
 
